@@ -18,6 +18,11 @@ const HEADERS = [
   'Final Round',
   'Offer',
   'Notes',
+  'Connection',
+  'Contact Name',
+  'Reached Out',
+  'Response Received',
+  'Follow-up Date',
 ];
 
 export interface SheetEntry {
@@ -74,7 +79,7 @@ async function getOrCreateSpreadsheet(
   // Add headers
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: 'Applications!A1:P1',
+    range: 'Applications!A1:U1',
     valueInputOption: 'RAW',
     requestBody: {
       values: [HEADERS],
@@ -111,7 +116,7 @@ async function getOrCreateSpreadsheet(
               sheetId,
               dimension: 'COLUMNS',
               startIndex: 0,
-              endIndex: 16,
+              endIndex: 21,
             },
             properties: {
               pixelSize: 150,
@@ -127,7 +132,7 @@ async function getOrCreateSpreadsheet(
 }
 
 /**
- * Ensures an existing spreadsheet has the updated 16-column header layout.
+ * Ensures an existing spreadsheet has the updated 21-column header layout.
  * If the current header row has fewer columns, it updates to match.
  */
 async function ensureHeaders(
@@ -137,18 +142,18 @@ async function ensureHeaders(
   try {
     const headerResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Applications!A1:P1',
+      range: 'Applications!A1:U1',
     });
 
     const currentHeaders = headerResponse.data.values?.[0] || [];
 
-    // If we already have 16 columns, no migration needed
-    if (currentHeaders.length >= 16) return;
+    // If we already have 21 columns, no migration needed
+    if (currentHeaders.length >= 21) return;
 
-    // Update headers to the full 16-column layout
+    // Update headers to the full 21-column layout
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: 'Applications!A1:P1',
+      range: 'Applications!A1:U1',
       valueInputOption: 'RAW',
       requestBody: {
         values: [HEADERS],
@@ -184,7 +189,7 @@ export async function addSheetEntry(
   if (entry.url) {
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: 'Applications!A:P',
+      range: 'Applications!A:U',
     });
 
     const rows = existing.data.values || [];
@@ -240,7 +245,7 @@ export async function addSheetEntry(
     // Append new row
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Applications!A:P',
+      range: 'Applications!A:U',
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
       requestBody: {
@@ -262,6 +267,11 @@ export async function addSheetEntry(
             '',                      // N. Final Round
             '',                      // O. Offer
             '',                      // P. Notes
+            'No',                    // Q. Connection
+            '',                      // R. Contact Name
+            'No',                    // S. Reached Out
+            '',                      // T. Response Received
+            '',                      // U. Follow-up Date
           ],
         ],
       },
