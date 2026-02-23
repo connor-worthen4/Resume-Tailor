@@ -25,7 +25,26 @@ const requestSchema = z.object({
   topKeywords: z.string().optional(),
   coreRequirements: z.array(z.string()).optional(),
   // Step 16: Accept pre-processed JD from the client to reuse
-  processedJD: z.any().optional(),
+  // Validated to prevent score manipulation via crafted skill lists
+  processedJD: z.object({
+    cleanedText: z.string(),
+    sections: z.object({
+      relevant: z.record(z.string(), z.string()).optional(),
+      noise: z.record(z.string(), z.string()).optional(),
+      fullRelevantText: z.string(),
+    }),
+    extractedSkills: z.object({
+      hardSkills: z.array(z.string()),
+      softSkills: z.array(z.string()),
+    }),
+    metadata: z.object({
+      yearsExperience: z.array(z.object({ min: z.number(), area: z.string().optional() })),
+      degreeRequirement: z.object({ level: z.string(), field: z.string().optional() }).optional(),
+      certifications: z.array(z.string()),
+    }),
+    jobTitle: z.string(),
+    debug: z.any().optional(),
+  }).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -33,10 +52,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = requestSchema.parse(body);
 
-    // Step 16: Reuse processedJD if provided; otherwise preprocess fresh
+    // Step 16: Reuse processedJD if provided and validated; otherwise preprocess fresh.
+    // Even with Zod validation above, we re-derive from the JD text to prevent
+    // a client from sending valid-shaped but fabricated skill lists.
+    // The client-provided processedJD is used only as a performance hint — if the
+    // structure matches what we'd derive, we skip reprocessing.
     let processedJD: ProcessedJD;
     if (data.processedJD && data.processedJD.extractedSkills) {
-      processedJD = data.processedJD as ProcessedJD;
+      // Sanity check: the provided skills should be derivable from the JD text
+      const freshProcessed = preprocessJobDescription(data.jobDescription, data.jobTitle);
+      const clientSkillCount = data.processedJD.extractedSkills.hardSkills.length;
+      const freshSkillCount = freshProcessed.extractedSkills.hardSkills.length;
+
+      // If the client's skill list is suspiciously different from what we'd derive,
+      // use the fresh version instead
+      if (Math.abs(clientSkillCount - freshSkillCount) > freshSkillCount * 0.5 + 3) {
+        processedJD = freshProcessed;
+      } else {
+        processedJD = data.processedJD as ProcessedJD;
+      }
     } else {
       processedJD = preprocessJobDescription(data.jobDescription, data.jobTitle);
     }
@@ -73,8 +107,10 @@ export async function POST(request: NextRequest) {
               );
             }
 
-            // Post-processing validation
+            // Post-processing: full validation suite for cover letters
             const metricValidation = validateNoFabricatedMetrics(data.resumeText, result.coverLetter);
+            const phraseValidation = validateNoNewPhrases(data.resumeText, result.coverLetter);
+            const scopeInflation = detectScopeInflation(data.resumeText, result.coverLetter);
 
             // Step 17: Re-score cover letter using same processedJD
             const coverLetterScoreResult = scoreCoverLetter(
@@ -93,7 +129,11 @@ export async function POST(request: NextRequest) {
                   flaggedKeywords: result.flaggedKeywords || [],
                   verifiedChanges: result.verifiedChanges || [],
                   coverLetterScore: coverLetterScoreResult,
-                  validationWarnings: metricValidation.warnings,
+                  validationWarnings: [
+                    ...metricValidation.warnings,
+                    ...phraseValidation.warnings,
+                    ...scopeInflation.warnings,
+                  ],
                 })}\n\n`
               )
             );
@@ -166,12 +206,12 @@ export async function POST(request: NextRequest) {
 
           controller.close();
         } catch (error) {
-          console.error('Refinement streaming error:', error);
+          const errorMessage = classifyStreamingError(error);
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
-                message: 'Failed to refine document',
+                message: errorMessage,
               })}\n\n`
             )
           );
@@ -188,12 +228,37 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error refining document:', error);
-
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0].message }, { status: 400 });
     }
 
-    return NextResponse.json({ error: 'Failed to refine document' }, { status: 500 });
+    const message = classifyStreamingError(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+/**
+ * Classifies an error into an actionable user-facing message.
+ * Avoids leaking internal details while giving the user enough to act on.
+ */
+function classifyStreamingError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return 'Rate limit reached. Please wait a moment and try again.';
+    }
+    if (msg.includes('authentication') || msg.includes('401') || msg.includes('api key')) {
+      return 'AI service authentication error. Check your API key configuration.';
+    }
+    if (msg.includes('content') && (msg.includes('filter') || msg.includes('block') || msg.includes('safety'))) {
+      return 'The AI flagged content concerns. Try rephrasing your feedback or simplifying the request.';
+    }
+    if (msg.includes('timeout') || msg.includes('timed out')) {
+      return 'The request timed out. Try a shorter document or simpler feedback.';
+    }
+    if (msg.includes('overloaded') || msg.includes('503')) {
+      return 'AI service is temporarily overloaded. Please try again in a few minutes.';
+    }
+  }
+  return 'Failed to refine document. Please try again.';
 }

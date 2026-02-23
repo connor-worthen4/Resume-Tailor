@@ -4,29 +4,134 @@ import { join } from 'path';
 
 const anthropic = new Anthropic();
 
+// Rules file cache — avoids reading from disk on every API call
+const rulesCache: { resume: string | null | undefined; coverLetter: string | null | undefined; timestamp: number } = {
+  resume: undefined,
+  coverLetter: undefined,
+  timestamp: 0,
+};
+const RULES_CACHE_TTL_MS = 60_000; // Re-read from disk at most every 60 seconds
+
+function isRulesCacheValid(): boolean {
+  return rulesCache.timestamp > 0 && (Date.now() - rulesCache.timestamp) < RULES_CACHE_TTL_MS;
+}
+
 async function loadRules(): Promise<string | null> {
+  if (isRulesCacheValid() && rulesCache.resume !== undefined) {
+    return rulesCache.resume;
+  }
   try {
     const rulesPath = join(process.cwd(), 'resume-rules.md');
     const content = await readFile(rulesPath, 'utf-8');
-    // Strip HTML comments and check if there's any meaningful content
     const stripped = content.replace(/<!--[\s\S]*?-->/g, '').replace(/^#.*$/gm, '').trim();
-    if (!stripped) return null;
-    return content;
+    const result = stripped ? content : null;
+    rulesCache.resume = result;
+    rulesCache.timestamp = Date.now();
+    return result;
   } catch {
+    rulesCache.resume = null;
+    rulesCache.timestamp = Date.now();
     return null;
   }
 }
 
 async function loadCoverLetterRules(): Promise<string | null> {
+  if (isRulesCacheValid() && rulesCache.coverLetter !== undefined) {
+    return rulesCache.coverLetter;
+  }
   try {
     const rulesPath = join(process.cwd(), 'cover-letter-rules.md');
     const content = await readFile(rulesPath, 'utf-8');
     const stripped = content.replace(/<!--[\s\S]*?-->/g, '').replace(/^#.*$/gm, '').trim();
-    if (!stripped) return null;
-    return content;
+    const result = stripped ? content : null;
+    rulesCache.coverLetter = result;
+    rulesCache.timestamp = Date.now();
+    return result;
   } catch {
+    rulesCache.coverLetter = null;
+    rulesCache.timestamp = Date.now();
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Job Title Decomposition — breaks JD titles into components for smart headlines
+// ---------------------------------------------------------------------------
+
+interface DecomposedTitle {
+  coreRole: string;
+  qualifiers: string[];
+  techStack: string[];
+  level: string | null;
+  rawTitle: string;
+}
+
+const LEVEL_PATTERNS = /\b(senior|sr\.?|junior|jr\.?|lead|staff|principal|associate|entry[- ]?level|mid[- ]?level)\b/i;
+const ROMAN_NUMERALS = /\b(I{1,3}|IV|V|VI{0,3})\b/;
+
+/**
+ * Decompose a JD title like "Software Engineer - Backend (Python)" into
+ * structured components for intelligent headline construction.
+ */
+export function decomposeJobTitle(title: string): DecomposedTitle {
+  let working = title.trim();
+  const rawTitle = working;
+
+  // Extract parenthetical content — usually tech stack or department context
+  const techStack: string[] = [];
+  const parenMatches = working.match(/\(([^)]+)\)/g);
+  if (parenMatches) {
+    for (const match of parenMatches) {
+      const inner = match.slice(1, -1).trim();
+      // Split on / or , for multi-tech parentheticals like "(React/Node)"
+      const techs = inner.split(/[/,]/).map(t => t.trim()).filter(Boolean);
+      techStack.push(...techs);
+    }
+    working = working.replace(/\([^)]+\)/g, '').trim();
+  }
+
+  // Extract level indicators
+  let level: string | null = null;
+  const levelMatch = working.match(LEVEL_PATTERNS);
+  if (levelMatch) {
+    level = levelMatch[1];
+    working = working.replace(LEVEL_PATTERNS, '').trim();
+  }
+
+  // Strip roman numeral level suffixes (e.g., "Engineer III")
+  working = working.replace(ROMAN_NUMERALS, '').trim();
+
+  // Split on common JD title separators: " - ", " — ", " | ", ", "
+  const parts = working
+    .split(/\s*[-–—|]\s*|\s*,\s+/)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+
+  // First part is the core role; remaining parts are qualifiers
+  const coreRole = (parts[0] || working).replace(/\s+/g, ' ').trim();
+  const qualifiers = parts.slice(1).filter(q => q.length > 0);
+
+  return { coreRole, qualifiers, techStack, level, rawTitle };
+}
+
+/**
+ * Build a headline guidance block for the AI prompt from a decomposed title.
+ */
+function buildHeadlineGuidance(decomposed: DecomposedTitle): string {
+  const lines: string[] = ['[Headline Guidance]'];
+  lines.push(`Core Role: ${decomposed.coreRole}`);
+  if (decomposed.level) {
+    lines.push(`Level: ${decomposed.level}`);
+  }
+  if (decomposed.qualifiers.length > 0) {
+    lines.push(`Qualifiers: ${decomposed.qualifiers.join(', ')}`);
+  }
+  if (decomposed.techStack.length > 0) {
+    lines.push(`Tech Stack Keywords: ${decomposed.techStack.join(', ')}`);
+  }
+  lines.push(`Raw JD Title (do NOT use verbatim): ${decomposed.rawTitle}`);
+  lines.push('Construct a natural professional headline using these components. All core role words and qualifier/tech keywords should appear in the headline or first summary line.');
+  return lines.join('\n');
 }
 
 const BASE_SYSTEM_PROMPT = `You are an elite resume/CV consultant and ATS optimization specialist. Your goal is to rewrite the resume experience section to maximize keyword alignment with the provided Job Description using high-impact verbiage that transforms passive tasks into quantifiable achievements.
@@ -34,10 +139,17 @@ const BASE_SYSTEM_PROMPT = `You are an elite resume/CV consultant and ATS optimi
 PRIORITY ONE: FACTUAL GROUNDING
 You are strictly forbidden from fabricating data. If a metric (percentage, dollar amount, team size) is not present in the Master Resume, do NOT invent one. Instead, focus on the Technical Achievement.
 
-FORMULA: "Leveraged [skill] to [action], resulting in [outcome]."
+FORMULA: "[Action verb] [skill/tool] to [specific action], [measurable or observable outcome]."
 
 Bad (fabricated): "Improved efficiency by 25%."
-Good (fact-based): "Leveraged API optimization techniques to reduce redundant calls, resulting in measurably lower server latency."
+Good (fact-based): "Refactored API endpoints using caching middleware to eliminate redundant database calls, cutting average server response time from 800ms to 200ms."
+Also good (no metric available): "Redesigned the deployment pipeline with Docker and GitHub Actions, reducing manual release steps from twelve to two."
+
+VOICE DIRECTIVE — SOUND HUMAN, NOT AI:
+- Do NOT use the word "Leveraged" anywhere in the resume. It is the single most common AI-generated resume verb and recruiters flag it immediately.
+- Avoid these overused AI verbs: "Utilized," "Facilitated," "Synergized," "Streamlined" (unless describing a genuinely streamlined process with specifics).
+- Prefer concrete, specific verbs that describe what actually happened: "Built," "Cut," "Shipped," "Rewrote," "Migrated," "Automated," "Reduced," "Launched."
+- Every bullet should read like a human wrote it on a Sunday afternoon, not like a language model optimized it. If a bullet sounds like a LinkedIn post, rewrite it.
 
 THE "SOURCE-ONLY" FILTER:
 - You may ONLY use nouns (tools, languages, frameworks, platforms) that are already present in the Master Resume.
@@ -53,13 +165,33 @@ MATCHING STRATEGY:
 Core Principles:
 1. NEVER fabricate experiences, skills, or qualifications the candidate doesn't have
 2. Every bullet point MUST start with a high-impact verb (Spearheaded, Architected, Optimized, Negotiated, Generated, etc.)
-3. Every bullet point MUST follow the XYZ formula: Accomplished [X] as measured by [Y], by doing [Z] — but ONLY use real metrics from the original resume. If no metric exists, describe the Technical Result instead.
+3. Where possible, follow the XYZ pattern: Accomplished [X] as measured by [Y], by doing [Z] — but ONLY use real metrics from the original resume. If no metric exists, describe the Technical Result instead. NOTE: This is a guideline, not a rigid template. The strategy mode (keyword, achievement, hybrid) determines how strictly to apply this pattern. See strategy instructions below.
 4. NEVER use "Responsible for..." or "Tasked with..." — replace with action verbs
 5. Mirror the exact terminology from the Job Description for ATS matching — but ONLY for skills/tools already in the original resume
 6. The top 5 technical skills from the JD that OVERLAP with the original resume should appear 2-3 times across different sections (headline, summary, skills, experience) with natural contextual variation. The first mention in each section provides the most scoring value (BM25 saturation). Never exceed 3 mentions of any single term. Target overall keyword density of 1.5-2.2% of total word count — exceeding ~3% density for any single term risks triggering stuffing detection in modern ATS.
 7. Keep each bullet point to a maximum of 2 lines for ATS readability
 8. Maintain reverse-chronological order and standard section headers
-9. JOB TITLE HEADLINE (CRITICAL — 10.6x IMPACT): The professional headline or title line at the top of the resume MUST contain the exact job title from the job posting. This single optimization produces the highest documented increase in interview probability. If the candidate's most recent actual title differs from the JD title, use the JD title as the resume headline (e.g., "Senior Software Engineer" if the JD says "Senior Software Engineer") and note the candidate's actual title within the work experience section. The headline is the first thing both ATS parsers and human recruiters index.
+9. JOB TITLE HEADLINE (CRITICAL — 10.6x IMPACT): The professional headline at the top of the resume must contain the CORE ROLE WORDS from the job title. This single optimization produces the highest documented increase in interview probability.
+
+   DO NOT blindly copy the raw JD title. Titles like "Software Engineer - Backend (Python)" or "Sr. Data Scientist, ML Platform" contain organizational qualifiers, team names, or parenthetical tech stacks that look unnatural on a resume and signal a lazy copy-paste to recruiters.
+
+   Instead, DECOMPOSE the JD title and construct a natural professional headline:
+   a) CORE ROLE (e.g., "Software Engineer", "Data Scientist", "Product Manager") — these words MUST appear in the headline.
+   b) QUALIFIERS (e.g., "Backend", "Frontend", "Full Stack", "Cloud", "Growth") — integrate naturally as descriptive context in the headline.
+   c) TECH STACK from parentheses or after separators (e.g., "Python", "React/Node") — include as keyword-rich context. Place in the headline if short, or in the summary if the headline would become cluttered.
+
+   Good headline formats:
+   - "Backend Software Engineer" (qualifier merged into title naturally)
+   - "Software Engineer | Backend Development, Python, AWS" (structured with separator — packs keywords)
+   - "Full Stack Developer | React, Node.js, TypeScript" (tech stack as headline keywords)
+   - "Senior Data Scientist — Machine Learning & NLP" (qualifier as specialization)
+
+   Bad headline formats:
+   - "Software Engineer - Backend (Python)" (raw JD title copy-paste)
+   - "Sr. Data Scientist, ML Platform" (includes internal team name)
+   - "Product Manager III - Growth" (includes internal level numbering)
+
+   If the [Headline Guidance] block is provided in the message, use its decomposed components to construct the headline. Every core role word AND qualifier/tech keyword should appear somewhere in the headline or the first line of the summary. The headline is the highest-weighted ATS zone — maximize keyword density here while keeping it readable as a professional title a human would write.
 10. KEYWORD PLACEMENT HIERARCHY: Not all keyword placements are equal. ATS parsers weight keywords by their location in the document. Place keywords in this priority order:
    (1) Resume headline/professional title — highest weight, biggest impact
    (2) Professional summary — second highest, sets the framing for the entire document
@@ -81,7 +213,7 @@ Within each category, verbs are ordered by impact strength. Prefer verbs signali
 - Communication: Negotiated, Influenced, Persuaded, Authored, Presented, Advised, Consulted, Mediated, Clarified, Collaborated
 - Impact/Results: Pioneered, Transformed, Generated, Launched, Exceeded, Accelerated, Maximized, Secured, Revitalized, Reduced
 
-CRITICAL RULE: If the base resume does not contain a specific number (e.g., 20%), DO NOT invent one. Instead, describe the technical result of the action using the pattern: "Leveraged [skill] to [action], resulting in [outcome]."
+CRITICAL RULE: If the base resume does not contain a specific number (e.g., 20%), DO NOT invent one. Instead, describe the technical result of the action using concrete language: "[Action verb] [skill/tool] to [specific action], [observable outcome]."
 
 TECHNICAL OUTCOME DIRECTIVE (Mandatory):
 - Replace ALL invented metrics with Technical Wins. Never fabricate percentages, dollar amounts, or team sizes.
@@ -121,6 +253,7 @@ function getStrategyInstructions(mode: string): string {
     case 'keyword':
       return `\n\nSTRATEGY: STRICT KEYWORD MIRRORING
 - Your PRIMARY goal is to maximize ATS keyword coverage while maintaining natural language
+- XYZ FORMULA: Optional in this mode. Use it when a bullet naturally lends itself to measurable outcomes, but do NOT force every bullet into XYZ format. Keyword placement and natural phrasing take priority.
 - Target 80-85% coverage of the JD's technical requirements that OVERLAP with the candidate's actual skills. Do NOT force coverage above this by stuffing keywords — density above 2.5% per term triggers stuffing detection in modern ATS
 - Extract every technical term, tool, framework, methodology, and competency phrase from the JD
 - Each overlapping keyword should appear in 2-3 distinct sections (headline, summary, skills, experience) with natural contextual variation — first mention in each section carries the most weight
@@ -131,7 +264,7 @@ function getStrategyInstructions(mode: string): string {
     case 'achievement':
       return `\n\nSTRATEGY: ACHIEVEMENT QUANTIFIER
 - Your PRIMARY goal is to transform every bullet into a compelling, fact-based achievement that demonstrates real impact
-- Every bullet MUST follow XYZ formula: "Accomplished [X] as measured by [Y], by doing [Z]"
+- XYZ FORMULA: Strongly preferred in this mode. Every bullet SHOULD follow the pattern "Accomplished [X] as measured by [Y], by doing [Z]" — but vary the sentence structure so bullets don't all read identically.
 - Use ONLY metrics that already exist in the original resume. If a metric is missing, describe the Technical Outcome instead (e.g., "reducing server latency" rather than inventing "by 25%")
 - Focus on business impact using factual descriptions: efficiency gains, cost reductions, technical improvements — without fabricated numbers
 - Use the strongest possible action verbs from the Verb Bank — prefer ownership verbs (Spearheaded, Architected, Pioneered) over participation verbs
@@ -142,8 +275,9 @@ function getStrategyInstructions(mode: string): string {
     default:
       return `\n\nSTRATEGY: HYBRID (KEYWORD + ACHIEVEMENT)
 - Balance ATS keyword optimization with achievement-oriented rewriting
+- XYZ FORMULA: Use the pattern for roughly 60-70% of bullets. The remaining bullets can use simpler structures to maintain variety and a human feel.
 - Target 70-80% coverage of the JD's technical requirements that overlap with the candidate's actual skills. Coverage above 80% should only come from genuine skill overlap, never from forced insertion
-- Mirror JD terminology AND transform bullets into XYZ-formula achievements
+- Mirror JD terminology AND weave keywords into achievement-oriented bullets
 - Prioritize the top 5 JD hard skills that OVERLAP with the original resume for keyword placement — use the placement hierarchy: headline > summary > skills section > experience bullets
 - Include both acronym and full-term forms for every technical abbreviation
 - Hard skills take 4:1 priority over soft skills for keyword optimization
@@ -197,26 +331,36 @@ STRUCTURE:
 2. **Alignment** — Connect the candidate's trajectory to the company's goals. Show you understand what they do and why this role matters.
 3. **Benefit/Evidence** — For each pain point, provide a concrete example from the candidate's experience using the pattern: "At [Company], I [action] which [result]." Only use facts from the base resume.
 
-VOICE RULES:
-- Write in a professional but conversational tone
-- NO AI-isms: avoid "leverage," "synergy," "I am excited to..." "I am passionate about..."
-- Sound like a real human who is genuinely interested
-- Use first person naturally
-- Do NOT repeat the resume verbatim — tell the story behind 2-3 key achievements
+VOICE RULES — THIS IS THE MOST IMPORTANT SECTION:
+The cover letter must read like a real person sat down, researched the company, and wrote this specifically for them. Not like an AI spit it out. Here is how:
 
-Extended AI-ism Blacklist — do NOT use any of these phrases:
-- "I am passionate about..."
-- "I thrive in..."
+- Write the way a smart, articulate professional actually talks. Not formal-stiff, not casual-sloppy. Think "how would I explain this to a colleague I respect."
+- Vary sentence length. Short sentences punch. Longer ones carry nuance and show you can think through complexity. Mix them.
+- Include ONE specific, non-obvious detail about the company that shows genuine research (a recent product launch, a blog post, an engineering decision, a company value that resonates). Generic flattery ("your innovative company") is worse than nothing.
+- Use contractions naturally (I'm, I've, didn't, we'd). People write with contractions. AI tends not to.
+- Start at least one sentence with "I" and at least one with something other than "I" to avoid the "I, I, I" pattern.
+- Reference a specific moment or decision from your career — not just "I did X at Company Y" but why it mattered to you or what you learned.
+- Do NOT repeat the resume verbatim — tell the story behind 2-3 key achievements. Add context the resume can't: why you chose that approach, what the tradeoff was, what surprised you.
+- End with something specific you want to discuss, not a generic "I look forward to discussing." Example: "I'd love to talk about how your team handles [specific challenge mentioned in JD] — it's a problem I've thought about a lot."
+
+AI-ISM BLACKLIST — instant rejection if any of these appear:
+- "I am passionate about..." / "I'm passionate about..."
+- "I thrive in..." / "I excel in..."
 - "I bring a unique blend of..."
-- "In today's fast-paced..."
-- "I am confident that..."
+- "In today's fast-paced..." / "In an era of..."
+- "I am confident that..." / "I'm confident that..."
 - "proven track record" (without specific proof immediately following)
-- "results-driven professional"
-- "dynamic environment"
+- "results-driven professional" / "detail-oriented professional"
+- "dynamic environment" / "fast-paced environment"
 - "hit the ground running"
 - "value-add" / "value proposition"
-- "cutting-edge" / "best-in-class" / "world-class"
-- Any phrase that sounds like a LinkedIn headline rather than a human conversation
+- "cutting-edge" / "best-in-class" / "world-class" / "state-of-the-art"
+- "leverage my" / "utilize my" / "synergy" / "synergies"
+- "I am excited to..." / "I'm excited to..."
+- "I would welcome the opportunity..."
+- "I believe I would be a great fit..."
+- "Dear Hiring Manager" (use "Dear [Team Name] Team" or "Dear Hiring Team" — never the robotic "Dear Hiring Manager")
+- Any phrase that sounds like a LinkedIn headline rather than something a human would actually write
 
 KEYWORD SUPPLEMENTATION:
 While the cover letter is optimized for human persuasion (not ATS scoring), modern ATS platforms DO index cover letter text for keyword searches. Naturally weave 3-5 of the JD's highest-priority technical keywords into the cover letter narrative. These keywords must:
@@ -349,7 +493,11 @@ export function validateTailoredContent(original: string, tailored: string): Val
   const flaggedSkills: string[] = [];
   for (const keyword of tailoredKeywords) {
     if (!originalKeywords.has(keyword)) {
-      flaggedSkills.push(keyword);
+      // Before flagging, check if the keyword is a synonym of something in the original
+      // e.g., "JS" should not be flagged if "javascript" is in the original
+      if (!termExistsWithSynonyms(keyword, original)) {
+        flaggedSkills.push(keyword);
+      }
     }
   }
 
@@ -385,6 +533,9 @@ export function verifyFeedbackApplied(
   newDraft: string
 ): FeedbackVerification[] {
   const allFeedback = [...feedbackHistory, feedback];
+  const prevLower = previousDraft.toLowerCase();
+  const newLower = newDraft.toLowerCase();
+
   return allFeedback.map((fb) => {
     // Extract significant terms (3+ chars, not stopwords)
     const terms = fb
@@ -393,12 +544,34 @@ export function verifyFeedbackApplied(
       .filter((t) => t.length >= 3 && !IGNORE_WORDS.has(t));
 
     // Check which terms appear in the new draft
-    const newLower = newDraft.toLowerCase();
     const matchedTerms = terms.filter((t) => newLower.includes(t));
 
-    // Consider applied if >50% of significant terms are present in new text
-    // OR if the draft actually changed (for non-keyword feedback like "make it shorter")
-    const applied = matchedTerms.length > terms.length * 0.5 || newDraft !== previousDraft;
+    // Check which terms are NEW to the draft (weren't in previous version)
+    const newlyAddedTerms = terms.filter((t) => newLower.includes(t) && !prevLower.includes(t));
+
+    // Detect structural changes for non-keyword feedback (e.g., "make it shorter", "remove the summary")
+    const prevWordCount = previousDraft.split(/\s+/).length;
+    const newWordCount = newDraft.split(/\s+/).length;
+    const significantLengthChange = Math.abs(prevWordCount - newWordCount) > prevWordCount * 0.1;
+
+    // Determine if feedback was actually applied:
+    // 1. New terms were added that match the feedback (additive feedback)
+    // 2. Sufficient existing terms match AND the document actually changed in the relevant area
+    // 3. Structural changes occurred for non-keyword feedback
+    let applied = false;
+
+    if (terms.length === 0) {
+      // Feedback had no extractable terms (e.g., "make it shorter") — check for structural change
+      applied = significantLengthChange || newDraft !== previousDraft;
+    } else if (newlyAddedTerms.length > 0) {
+      // New content was added matching the feedback
+      applied = true;
+    } else if (matchedTerms.length > terms.length * 0.5) {
+      // Majority of terms present — but only count as applied if the draft actually changed
+      // in a way that relates to the feedback (not just unrelated AI drift)
+      const prevMatchCount = terms.filter((t) => prevLower.includes(t)).length;
+      applied = matchedTerms.length > prevMatchCount || newDraft !== previousDraft;
+    }
 
     return { feedback: fb, applied, matchedTerms };
   });
@@ -416,7 +589,7 @@ export const SYNONYM_MAP: Record<string, string[]> = {
   'ai': ['artificial intelligence'],
   'dl': ['deep learning'],
   'nlp': ['natural language processing'],
-  'cv': ['computer vision'],
+  'comp-vision': ['computer vision'],
   'aws': ['amazon web services'],
   'gcp': ['google cloud platform', 'google cloud'],
   'k8s': ['kubernetes'],
@@ -438,27 +611,46 @@ export const SYNONYM_MAP: Record<string, string[]> = {
   'jwt': ['json web token'],
   'rest': ['representational state transfer'],
   'graphql': ['graph query language'],
+  'node': ['node.js', 'nodejs'],
+  'react': ['reactjs'],
+  'vue': ['vuejs', 'vue.js'],
+  'db': ['database'],
+  'postgres': ['postgresql'],
+  'mongo': ['mongodb'],
+  'golang': ['go'],
+  'tf': ['terraform'],
+  'docker': ['containerization'],
 };
 
 /**
+ * Checks if a term appears in text using word-boundary matching to avoid
+ * false positives (e.g., "db" matching "feedback", "app" matching "happy").
+ */
+function wordBoundaryMatch(needle: string, haystack: string): boolean {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?:^|[\\s,;.!?()\\[\\]{}/"'\\-])${escaped}(?:$|[\\s,;.!?()\\[\\]{}/"'\\-])`, 'i');
+  return pattern.test(haystack);
+}
+
+/**
  * Normalizes a term by checking if it (or its synonym) exists in the provided text.
- * Returns true if the term or any of its synonyms are found.
+ * Uses word-boundary matching to prevent false positives from substring matches.
  */
 export function termExistsWithSynonyms(term: string, text: string): boolean {
   const lower = text.toLowerCase();
   const termLower = term.toLowerCase();
 
-  if (lower.includes(termLower)) return true;
+  if (wordBoundaryMatch(termLower, lower)) return true;
 
   // Check if term is a key in synonym map
   const synonyms = SYNONYM_MAP[termLower];
   if (synonyms) {
-    return synonyms.some(syn => lower.includes(syn));
+    return synonyms.some(syn => wordBoundaryMatch(syn, lower));
   }
 
   // Check if term is a value in synonym map (reverse lookup)
   for (const [abbrev, expansions] of Object.entries(SYNONYM_MAP)) {
-    if (expansions.some(exp => exp === termLower) && lower.includes(abbrev)) {
+    if (expansions.some(exp => exp === termLower) && wordBoundaryMatch(abbrev, lower)) {
       return true;
     }
   }
@@ -473,6 +665,60 @@ export function termExistsWithSynonyms(term: string, text: string): boolean {
 export interface MetricValidationResult {
   fabricatedMetrics: string[];
   warnings: string[];
+}
+
+interface ParsedMetric {
+  raw: string;
+  value: number;
+  type: 'percent' | 'dollar' | 'contextual';
+}
+
+/**
+ * Extracts the numeric value from a metric string.
+ * Handles percentages ("25%"), dollar amounts ("$100K"), and contextual numbers ("15 team").
+ */
+function parseMetricValue(metric: string): ParsedMetric | null {
+  // Percentage
+  const pctMatch = metric.match(/^(\d+(?:\.\d+)?)%$/);
+  if (pctMatch) {
+    return { raw: metric, value: parseFloat(pctMatch[1]), type: 'percent' };
+  }
+
+  // Dollar amounts with optional K/M/B suffix
+  const dollarMatch = metric.match(/^\$([\d,]+(?:\.\d+)?)([KMB])?$/i);
+  if (dollarMatch) {
+    let val = parseFloat(dollarMatch[1].replace(/,/g, ''));
+    const suffix = (dollarMatch[2] || '').toUpperCase();
+    if (suffix === 'K') val *= 1_000;
+    else if (suffix === 'M') val *= 1_000_000;
+    else if (suffix === 'B') val *= 1_000_000_000;
+    return { raw: metric, value: val, type: 'dollar' };
+  }
+
+  // Contextual number (leading digits)
+  const ctxMatch = metric.match(/^(\d+)/);
+  if (ctxMatch) {
+    return { raw: metric, value: parseInt(ctxMatch[1], 10), type: 'contextual' };
+  }
+
+  return null;
+}
+
+/**
+ * Checks if a metric is a "nudged" version of any original metric (within 15% and same type).
+ * Returns the original metric it appears to be derived from, or null.
+ */
+function findNudgedMetric(candidate: ParsedMetric, originals: ParsedMetric[]): string | null {
+  const NUDGE_THRESHOLD = 0.15;
+  for (const orig of originals) {
+    if (orig.type !== candidate.type) continue;
+    if (orig.value === 0) continue;
+    const ratio = Math.abs(candidate.value - orig.value) / orig.value;
+    if (ratio > 0 && ratio <= NUDGE_THRESHOLD) {
+      return orig.raw;
+    }
+  }
+  return null;
 }
 
 export function validateNoFabricatedMetrics(original: string, tailored: string): MetricValidationResult {
@@ -496,37 +742,88 @@ export function validateNoFabricatedMetrics(original: string, tailored: string):
     return matches;
   };
 
-  const originalPercentages = new Set(extractMatches(original, percentagePattern));
+  // Build parsed metric arrays from originals for nudge detection
+  const originalPctStrings = extractMatches(original, percentagePattern);
+  const originalDollarStrings = extractMatches(original, dollarPattern);
+  const originalCtxStrings = extractMatches(original, contextualNumberPattern);
+
+  const originalParsedMetrics: ParsedMetric[] = [
+    ...originalPctStrings.map(s => parseMetricValue(s)).filter((m): m is ParsedMetric => m !== null),
+    ...originalDollarStrings.map(s => parseMetricValue(s)).filter((m): m is ParsedMetric => m !== null),
+    ...originalCtxStrings.map(s => parseMetricValue(s)).filter((m): m is ParsedMetric => m !== null),
+  ];
+
+  const originalPercentages = new Set(originalPctStrings);
   const tailoredPercentages = extractMatches(tailored, percentagePattern);
   for (const pct of tailoredPercentages) {
     if (!originalPercentages.has(pct)) {
-      // Ignore if it looks like a date year
       const numVal = parseFloat(pct);
       if (numVal >= 1900 && numVal <= 2100) continue;
+
+      // Check for nudged metric
+      const parsed = parseMetricValue(pct);
+      if (parsed) {
+        const nudgedFrom = findNudgedMetric(parsed, originalParsedMetrics);
+        if (nudgedFrom) {
+          fabricatedMetrics.push(pct);
+          warnings.push(
+            `"${pct}" appears to be a modified version of "${nudgedFrom}" from the original resume.`
+          );
+          continue;
+        }
+      }
       fabricatedMetrics.push(pct);
     }
   }
 
-  const originalDollars = new Set(extractMatches(original, dollarPattern));
+  const originalDollars = new Set(originalDollarStrings);
   const tailoredDollars = extractMatches(tailored, dollarPattern);
   for (const dollar of tailoredDollars) {
     if (!originalDollars.has(dollar)) {
+      const parsed = parseMetricValue(dollar);
+      if (parsed) {
+        const nudgedFrom = findNudgedMetric(parsed, originalParsedMetrics);
+        if (nudgedFrom) {
+          fabricatedMetrics.push(dollar);
+          warnings.push(
+            `"${dollar}" appears to be a modified version of "${nudgedFrom}" from the original resume.`
+          );
+          continue;
+        }
+      }
       fabricatedMetrics.push(dollar);
     }
   }
 
-  const originalContextual = new Set(extractMatches(original, contextualNumberPattern).map(m => m.toLowerCase()));
+  const originalContextual = new Set(originalCtxStrings.map(m => m.toLowerCase()));
   const tailoredContextual = extractMatches(tailored, contextualNumberPattern);
   for (const ctx of tailoredContextual) {
     if (!originalContextual.has(ctx.toLowerCase())) {
+      const parsed = parseMetricValue(ctx);
+      if (parsed) {
+        const nudgedFrom = findNudgedMetric(parsed, originalParsedMetrics);
+        if (nudgedFrom) {
+          fabricatedMetrics.push(ctx);
+          warnings.push(
+            `"${ctx}" appears to be a modified version of "${nudgedFrom}" from the original resume.`
+          );
+          continue;
+        }
+      }
       fabricatedMetrics.push(ctx);
     }
   }
 
   if (fabricatedMetrics.length > 0) {
-    warnings.push(
-      `Potentially fabricated metrics detected: ${fabricatedMetrics.join(', ')}. These numbers do not appear in the original resume.`
-    );
+    // Add a general warning only if there are fabricated metrics without specific nudge warnings
+    const nudgeWarningCount = warnings.length;
+    const generalCount = fabricatedMetrics.length - nudgeWarningCount;
+    if (generalCount > 0) {
+      const generalMetrics = fabricatedMetrics.slice(nudgeWarningCount);
+      warnings.push(
+        `Potentially fabricated metrics detected: ${generalMetrics.join(', ')}. These numbers do not appear in the original resume.`
+      );
+    }
   }
 
   return { fabricatedMetrics, warnings };
@@ -542,6 +839,7 @@ export interface PhraseValidationResult {
 }
 
 const KNOWN_TECHNICAL_PHRASES = new Set([
+  // Original entries
   'machine learning', 'deep learning', 'data pipeline', 'data engineering',
   'project management', 'product management', 'system design', 'cloud computing',
   'distributed systems', 'microservices architecture', 'test driven',
@@ -556,6 +854,43 @@ const KNOWN_TECHNICAL_PHRASES = new Set([
   'version control', 'code review', 'pull request',
   'load balancing', 'auto scaling', 'event driven',
   'object oriented', 'functional programming', 'design patterns',
+  // Infrastructure and DevOps
+  'infrastructure as code', 'container orchestration', 'service mesh',
+  'blue green deployment', 'canary deployment', 'rolling deployment',
+  'configuration management', 'secrets management', 'log aggregation',
+  'monitoring and alerting', 'incident response', 'disaster recovery',
+  'high availability', 'fault tolerance', 'chaos engineering',
+  // Security
+  'penetration testing', 'threat modeling', 'security audit',
+  'identity management', 'access control', 'zero trust',
+  'data encryption', 'vulnerability assessment', 'compliance framework',
+  // Agile and PM
+  'sprint planning', 'backlog grooming', 'product roadmap',
+  'stakeholder management', 'risk management', 'change management',
+  'requirements gathering', 'technical writing', 'release management',
+  'kanban board', 'story points', 'velocity tracking',
+  // Data and ML
+  'feature engineering', 'model training', 'model deployment',
+  'a/b testing', 'data modeling', 'data governance',
+  'real time analytics', 'stream processing', 'batch processing',
+  'data lake', 'data mesh', 'data catalog',
+  'recommendation engine', 'anomaly detection', 'sentiment analysis',
+  // Architecture
+  'domain driven design', 'service oriented architecture', 'api gateway',
+  'message queue', 'event sourcing', 'cqrs pattern',
+  'clean architecture', 'hexagonal architecture', 'serverless architecture',
+  'edge computing', 'content delivery', 'reverse proxy',
+  // Testing
+  'unit testing', 'integration testing', 'end to end testing',
+  'test automation', 'performance testing', 'load testing',
+  'regression testing', 'acceptance testing', 'behavior driven',
+  // Cloud
+  'cloud native', 'cloud migration', 'multi cloud',
+  'hybrid cloud', 'cloud security', 'cost optimization',
+  // General business
+  'cross functional', 'digital transformation', 'process automation',
+  'strategic planning', 'vendor management', 'budget management',
+  'revenue growth', 'cost reduction', 'customer success',
 ]);
 
 function generateNgrams(text: string, n: number): Set<string> {
@@ -634,6 +969,41 @@ function extractLeadingVerb(bullet: string): string | null {
   return firstWord || null;
 }
 
+/**
+ * Computes word overlap ratio between two strings (Jaccard-like).
+ * Used to match original bullets to their tailored counterparts by content
+ * similarity rather than array position.
+ */
+function bulletSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2));
+  const wordsB = new Set(b.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let overlap = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) overlap++;
+  }
+  return overlap / Math.max(wordsA.size, wordsB.size);
+}
+
+const SCOPE_AMPLIFIERS = new Set([
+  'single-handedly', 'singlehandedly',
+  'cross-functional', 'cross functional',
+  'enterprise-wide', 'enterprise wide', 'enterprisewide',
+  'end-to-end', 'end to end',
+  'mission-critical', 'mission critical',
+  'global',
+  'flagship',
+  'company-wide', 'company wide', 'companywide',
+  'organization-wide', 'organization wide',
+  'multi-million', 'multimillion',
+  'billion-dollar', 'million-dollar',
+  'first-ever', 'first ever',
+  'sole',
+  'exclusively',
+  'revolutionized',
+  'groundbreaking',
+]);
+
 export function detectScopeInflation(original: string, tailored: string): ScopeInflationResult {
   const inflatedBullets: { original: string; tailored: string; severity: string }[] = [];
   const warnings: string[] = [];
@@ -643,29 +1013,89 @@ export function detectScopeInflation(original: string, tailored: string): ScopeI
   const originalBullets = original.match(bulletPattern) || [];
   const tailoredBullets = tailored.match(bulletPattern) || [];
 
-  // Simple matching: compare bullets by position within similar sections
-  const minLength = Math.min(originalBullets.length, tailoredBullets.length);
-  for (let i = 0; i < minLength; i++) {
-    const origVerb = extractLeadingVerb(originalBullets[i]);
-    const tailVerb = extractLeadingVerb(tailoredBullets[i]);
+  // Match each tailored bullet to its most similar original bullet by content
+  const usedOriginals = new Set<number>();
+  let unmatchedCount = 0;
+
+  for (const tailBullet of tailoredBullets) {
+    let bestIdx = -1;
+    let bestScore = 0;
+
+    for (let j = 0; j < originalBullets.length; j++) {
+      if (usedOriginals.has(j)) continue;
+      const score = bulletSimilarity(originalBullets[j], tailBullet);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = j;
+      }
+    }
+
+    // Track unmatched bullets (potential fabricated content)
+    if (bestIdx === -1 || bestScore < 0.3) {
+      unmatchedCount++;
+      continue;
+    }
+    usedOriginals.add(bestIdx);
+
+    const origVerb = extractLeadingVerb(originalBullets[bestIdx]);
+    const tailVerb = extractLeadingVerb(tailBullet);
     if (!origVerb || !tailVerb) continue;
 
     const origTier = getVerbTier(origVerb);
     const tailTier = getVerbTier(tailVerb);
 
-    // Flag Tier 1 → Tier 3 jumps
+    // Flag Tier 1 -> Tier 3 jumps (supporting -> ownership)
     if (origTier === 1 && tailTier === 3) {
       inflatedBullets.push({
-        original: originalBullets[i],
-        tailored: tailoredBullets[i],
+        original: originalBullets[bestIdx],
+        tailored: tailBullet,
         severity: 'high',
       });
+    }
+    // Also flag Tier 1 -> Tier 2 jumps as medium severity
+    if (origTier === 1 && tailTier === 2) {
+      inflatedBullets.push({
+        original: originalBullets[bestIdx],
+        tailored: tailBullet,
+        severity: 'medium',
+      });
+    }
+
+    // Check for qualifier amplification: scope amplifiers present in tailored but absent from original
+    const origLower = originalBullets[bestIdx].toLowerCase();
+    const tailLower = tailBullet.toLowerCase();
+    const addedAmplifiers: string[] = [];
+    for (const amplifier of SCOPE_AMPLIFIERS) {
+      if (tailLower.includes(amplifier) && !origLower.includes(amplifier)) {
+        addedAmplifiers.push(amplifier);
+      }
+    }
+    if (addedAmplifiers.length > 0) {
+      inflatedBullets.push({
+        original: originalBullets[bestIdx],
+        tailored: tailBullet,
+        severity: 'medium',
+      });
+      warnings.push(
+        `Qualifier amplification: "${addedAmplifiers.join('", "')}" added to bullet not present in original.`
+      );
     }
   }
 
   if (inflatedBullets.length > 0) {
+    const highCount = inflatedBullets.filter(b => b.severity === 'high').length;
+    const medCount = inflatedBullets.filter(b => b.severity === 'medium').length;
+    const parts: string[] = [];
+    if (highCount > 0) parts.push(`${highCount} high-severity (e.g., "assisted" upgraded to "spearheaded")`);
+    if (medCount > 0) parts.push(`${medCount} medium-severity (e.g., "assisted" upgraded to "managed")`);
     warnings.push(
-      `${inflatedBullets.length} bullet(s) may have inflated scope: supporting verbs were upgraded to ownership verbs (e.g., "assisted" → "spearheaded"). Review these for accuracy.`
+      `Scope inflation detected: ${parts.join(', ')}. Review these bullets to ensure the verb matches the candidate's actual role.`
+    );
+  }
+
+  if (unmatchedCount > 0) {
+    warnings.push(
+      `${unmatchedCount} tailored bullet(s) could not be matched to any original content. These may contain fabricated experience.`
     );
   }
 
@@ -1125,10 +1555,15 @@ export async function tailorResume(request: TailorRequest): Promise<TailorRespon
 
   const systemPrompt = await buildSystemPrompt(strategyMode, documentType);
 
+  const decomposedTitle = decomposeJobTitle(jobTitle);
+  const headlineGuidance = buildHeadlineGuidance(decomposedTitle);
+
   let messageContent = `Please tailor this resume for the following job:
 
 **Job Title:** ${jobTitle}
 **Company:** ${company}
+
+${headlineGuidance}
 
 **Job Description:**
 ${jobDescription}
@@ -1148,9 +1583,11 @@ ${resumeText}`;
 ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
   }
 
+  const maxTokens = documentType === 'cv' ? 16384 : 8192;
+
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 8192,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages: [{ role: 'user', content: messageContent }],
   });
@@ -1198,10 +1635,15 @@ export async function* tailorResumeStream(
 
   const systemPrompt = await buildSystemPrompt(strategyMode, documentType);
 
+  const decomposedTitle = decomposeJobTitle(jobTitle);
+  const headlineGuidance = buildHeadlineGuidance(decomposedTitle);
+
   let messageContent = `Please tailor this resume for the following job:
 
 **Job Title:** ${jobTitle}
 **Company:** ${company}
+
+${headlineGuidance}
 
 **Job Description:**
 ${jobDescription}
@@ -1221,9 +1663,12 @@ ${resumeText}`;
 ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
   }
 
+  // CVs need more tokens — they include all experience, publications, research, etc.
+  const maxTokens = documentType === 'cv' ? 16384 : 8192;
+
   const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 8192,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages: [{ role: 'user', content: messageContent }],
   });

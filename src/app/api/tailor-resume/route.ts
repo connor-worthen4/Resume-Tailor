@@ -62,8 +62,10 @@ export async function POST(request: NextRequest) {
               );
             }
 
-            // Post-processing: additional validation
+            // Post-processing: full validation suite for cover letters
             const metricValidation = validateNoFabricatedMetrics(data.resumeText, result.coverLetter);
+            const phraseValidation = validateNoNewPhrases(data.resumeText, result.coverLetter);
+            const scopeInflation = detectScopeInflation(data.resumeText, result.coverLetter);
 
             // Step 17: Cover letter scoring uses same processedJD
             const coverLetterScoreResult = scoreCoverLetter(
@@ -84,6 +86,8 @@ export async function POST(request: NextRequest) {
                   processedJD,
                   validationWarnings: [
                     ...metricValidation.warnings,
+                    ...phraseValidation.warnings,
+                    ...scopeInflation.warnings,
                   ],
                 })}\n\n`
               )
@@ -141,12 +145,12 @@ export async function POST(request: NextRequest) {
 
           controller.close();
         } catch (error) {
-          console.error('Streaming error:', error);
+          const errorMessage = classifyStreamingError(error);
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({
                 type: 'error',
-                message: 'Failed to tailor document',
+                message: errorMessage,
               })}\n\n`
             )
           );
@@ -163,12 +167,33 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error tailoring document:', error);
-
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.issues[0].message }, { status: 400 });
     }
 
-    return NextResponse.json({ error: 'Failed to tailor document' }, { status: 500 });
+    const message = classifyStreamingError(error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function classifyStreamingError(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes('rate limit') || msg.includes('429')) {
+      return 'Rate limit reached. Please wait a moment and try again.';
+    }
+    if (msg.includes('authentication') || msg.includes('401') || msg.includes('api key')) {
+      return 'AI service authentication error. Check your API key configuration.';
+    }
+    if (msg.includes('content') && (msg.includes('filter') || msg.includes('block') || msg.includes('safety'))) {
+      return 'The AI flagged content concerns. Try simplifying the resume or job description.';
+    }
+    if (msg.includes('timeout') || msg.includes('timed out')) {
+      return 'The request timed out. Try a shorter resume or job description.';
+    }
+    if (msg.includes('overloaded') || msg.includes('503')) {
+      return 'AI service is temporarily overloaded. Please try again in a few minutes.';
+    }
+  }
+  return 'Failed to tailor document. Please try again.';
 }

@@ -14,6 +14,7 @@ interface CoverLetterViewerProps {
   changes?: string[];
   flaggedKeywords?: string[];
   verifiedChanges?: FeedbackVerification[];
+  validationWarnings?: string[];
   previousDraft?: string;
   feedbackHistory?: string[];
 }
@@ -54,6 +55,7 @@ export function CoverLetterViewer({
   changes,
   flaggedKeywords,
   verifiedChanges,
+  validationWarnings,
   previousDraft,
 }: CoverLetterViewerProps) {
   const [diffOpen, setDiffOpen] = useState(false);
@@ -72,6 +74,23 @@ export function CoverLetterViewer({
     <div className="space-y-4">
       {flaggedKeywords && flaggedKeywords.length > 0 && (
         <WarningBadge flaggedKeywords={flaggedKeywords} />
+      )}
+
+      {validationWarnings && validationWarnings.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-amber-800 dark:text-amber-300">
+              Validation Warnings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-inside list-disc space-y-1 text-sm text-amber-700 dark:text-amber-400">
+              {validationWarnings.map((warning, i) => (
+                <li key={i}>{warning}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       )}
 
       {painPoints.length > 0 && (
