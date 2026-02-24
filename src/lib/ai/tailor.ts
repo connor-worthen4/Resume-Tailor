@@ -145,6 +145,28 @@ Bad (fabricated): "Improved efficiency by 25%."
 Good (fact-based): "Refactored API endpoints using caching middleware to eliminate redundant database calls, cutting average server response time from 800ms to 200ms."
 Also good (no metric available): "Redesigned the deployment pipeline with Docker and GitHub Actions, reducing manual release steps from twelve to two."
 
+PRIORITY TWO: CONTENT SELECTION AND TRIMMING
+Your job is NOT to rewrite every bullet from the base resume. Your job is to SELECT the most relevant content for this specific JD and CUT everything else. A focused, shorter resume always outperforms a bloated one.
+
+ROLE TRIAGE — Before writing anything, classify each role in the base resume:
+- HIGH relevance (core skills overlap with JD requirements): Keep this role. Write 2 strong bullets.
+- MEDIUM relevance (transferable skills, adjacent domain): Keep this role. Write 1-2 bullets.
+- LOW relevance (no meaningful connection to JD): Remove entirely, or reduce to a single-line summary (Title, Company, Dates) with no bullets.
+
+BULLET SELECTION — For each kept role, pick the 2 strongest bullets that demonstrate JD-required skills or relevant outcomes. Cut everything else. Do NOT rewrite all 6-8 bullets from the original — select the 2 best and sharpen them.
+
+CONTENT BUDGET (for resumes, not CVs):
+- Total output: 400-500 words (1 page)
+- Experience section: Maximum 3-4 roles, 2 bullets each
+- Professional Summary: 2-3 sentences directly addressing the JD's top requirements
+- Skills section: Only skills that overlap with the JD, organized into 2-3 subcategories
+- Other sections (Projects, Volunteer, Awards): Include ONLY if they add direct value for this JD. If the JD does not mention or value them, cut the entire section.
+
+TRIMMING PLAN — In the ---CHANGES--- section, explicitly list:
+- Which roles were kept, trimmed, or removed, and why
+- Which sections were cut and the reasoning
+- The approximate word count of the output
+
 VOICE DIRECTIVE — SOUND HUMAN, NOT AI:
 - Do NOT use the word "Leveraged" anywhere in the resume. It is the single most common AI-generated resume verb and recruiters flag it immediately.
 - Avoid these overused AI verbs: "Utilized," "Facilitated," "Synergized," "Streamlined" (unless describing a genuinely streamlined process with specifics).
@@ -165,7 +187,7 @@ MATCHING STRATEGY:
 Core Principles:
 1. NEVER fabricate experiences, skills, or qualifications the candidate doesn't have
 2. Every bullet point MUST start with a high-impact verb (Spearheaded, Architected, Optimized, Negotiated, Generated, etc.)
-3. Where possible, follow the XYZ pattern: Accomplished [X] as measured by [Y], by doing [Z] — but ONLY use real metrics from the original resume. If no metric exists, describe the Technical Result instead. NOTE: This is a guideline, not a rigid template. The strategy mode (keyword, achievement, hybrid) determines how strictly to apply this pattern. See strategy instructions below.
+3. Prefer the XYZ pattern when natural: Accomplished [X] as measured by [Y], by doing [Z] — but ONLY use real metrics from the original resume. If no metric exists, describe the Technical Result instead. A short, punchy bullet that clearly demonstrates a JD-required skill is ALWAYS better than a bloated XYZ-format bullet that pads word count. Do NOT force every bullet into XYZ format. The strategy mode (keyword, achievement, hybrid) determines emphasis. See strategy instructions below.
 4. NEVER use "Responsible for..." or "Tasked with..." — replace with action verbs
 5. Mirror the exact terminology from the Job Description for ATS matching — but ONLY for skills/tools already in the original resume
 6. The top 5 technical skills from the JD that OVERLAP with the original resume should appear 2-3 times across different sections (headline, summary, skills, experience) with natural contextual variation. The first mention in each section provides the most scoring value (BM25 saturation). Never exceed 3 mentions of any single term. Target overall keyword density of 1.5-2.2% of total word count — exceeding ~3% density for any single term risks triggering stuffing detection in modern ATS.
@@ -253,6 +275,7 @@ function getStrategyInstructions(mode: string): string {
     case 'keyword':
       return `\n\nSTRATEGY: STRICT KEYWORD MIRRORING
 - Your PRIMARY goal is to maximize ATS keyword coverage while maintaining natural language
+- TRIMMING FIRST: Achieve keyword coverage through SELECTION — pick the bullets that already contain or naturally support JD keywords. Do NOT stuff keywords into every sentence. Choosing the right 2 bullets per role is more effective than rewriting 6 bullets with forced keyword insertions.
 - XYZ FORMULA: Optional in this mode. Use it when a bullet naturally lends itself to measurable outcomes, but do NOT force every bullet into XYZ format. Keyword placement and natural phrasing take priority.
 - Target 80-85% coverage of the JD's technical requirements that OVERLAP with the candidate's actual skills. Do NOT force coverage above this by stuffing keywords — density above 2.5% per term triggers stuffing detection in modern ATS
 - Extract every technical term, tool, framework, methodology, and competency phrase from the JD
@@ -263,8 +286,9 @@ function getStrategyInstructions(mode: string): string {
 - Prioritize hard/technical skill keywords over soft skills at a 4:1 ratio`;
     case 'achievement':
       return `\n\nSTRATEGY: ACHIEVEMENT QUANTIFIER
-- Your PRIMARY goal is to transform every bullet into a compelling, fact-based achievement that demonstrates real impact
-- XYZ FORMULA: Strongly preferred in this mode. Every bullet SHOULD follow the pattern "Accomplished [X] as measured by [Y], by doing [Z]" — but vary the sentence structure so bullets don't all read identically.
+- Your PRIMARY goal is to select and sharpen the candidate's most compelling achievements for this specific JD
+- TRIMMING FIRST: Do NOT transform every bullet. Pick the 2 strongest achievements per role that demonstrate JD-required skills or relevant impact. Cut the rest. Quality over quantity.
+- XYZ FORMULA: Preferred when natural. Use the pattern "Accomplished [X] as measured by [Y], by doing [Z]" for bullets with real metrics, but a concise achievement bullet without forced XYZ structure is better than a padded one.
 - Use ONLY metrics that already exist in the original resume. If a metric is missing, describe the Technical Outcome instead (e.g., "reducing server latency" rather than inventing "by 25%")
 - Focus on business impact using factual descriptions: efficiency gains, cost reductions, technical improvements — without fabricated numbers
 - Use the strongest possible action verbs from the Verb Bank — prefer ownership verbs (Spearheaded, Architected, Pioneered) over participation verbs
@@ -275,7 +299,8 @@ function getStrategyInstructions(mode: string): string {
     default:
       return `\n\nSTRATEGY: HYBRID (KEYWORD + ACHIEVEMENT)
 - Balance ATS keyword optimization with achievement-oriented rewriting
-- XYZ FORMULA: Use the pattern for roughly 60-70% of bullets. The remaining bullets can use simpler structures to maintain variety and a human feel.
+- TRIMMING FIRST: Start by selecting the most relevant roles and bullets, then optimize those selections for keywords and achievements. Do NOT rewrite the entire resume — trim first, then polish what remains. Picking the right 2 bullets per role and sharpening them beats rewriting 6 mediocre bullets.
+- XYZ FORMULA: Use the pattern when it fits naturally. A concise, punchy bullet that demonstrates a JD skill is always better than a padded XYZ bullet.
 - Target 70-80% coverage of the JD's technical requirements that overlap with the candidate's actual skills. Coverage above 80% should only come from genuine skill overlap, never from forced insertion
 - Mirror JD terminology AND weave keywords into achievement-oriented bullets
 - Prioritize the top 5 JD hard skills that OVERLAP with the original resume for keyword placement — use the placement hierarchy: headline > summary > skills section > experience bullets
@@ -297,23 +322,28 @@ function getDocumentTypeInstructions(type: string): string {
 - Include academic history, research, grants, and professional affiliations if present`;
     case 'resume':
     default:
-      return `\n\nDOCUMENT TYPE: RESUME
-- Keep to 1-2 pages maximum — be concise and targeted
-- Prune non-relevant experience; focus on the last 10-15 years
-- Include only the most relevant experience for this specific role
-- Trim older or less relevant positions to brief summaries
-- Strictly follow XYZ formula and Keyword Mirroring for every bullet point`;
+      return `\n\nDOCUMENT TYPE: RESUME — STRICT CONTENT LIMITS
+- TARGET: 1 page, 400-500 words. This is a hard constraint, not a suggestion.
+- EXPERIENCE: Maximum 3-4 roles. Cut older or irrelevant roles entirely — do not summarize them, remove them. If a role has zero overlap with the JD, it does not belong in this resume.
+- BULLETS: 2 per role, maximum. Each bullet must be 1-2 lines. Pick the 2 bullets that best demonstrate JD-required skills. Cut everything else.
+- SUMMARY: 2-3 sentences that directly address the JD's top 2-3 requirements. No generic filler.
+- SKILLS: Only list skills that overlap with the JD. Organize into 2-3 subcategories. Remove any skill the JD does not mention or value.
+- SECTIONS: Remove entire sections (Projects, Volunteer, Awards, etc.) if they add no direct value for this specific JD. Every section must earn its space.
+- REMEMBER: A focused 1-page resume that hits the right keywords always outperforms a bloated 2-page resume that covers everything. Cut aggressively.`;
   }
 }
 
 async function buildSystemPrompt(strategyMode?: string, documentType?: string): Promise<string> {
   const rules = await loadRules();
   let prompt = BASE_SYSTEM_PROMPT;
-  prompt += getStrategyInstructions(strategyMode || 'hybrid');
-  prompt += getDocumentTypeInstructions(documentType || 'resume');
+  // Rules first (lowest recency weight) — provides formatting and verb guidance
   if (rules) {
     prompt += `\n\nThe following rules MUST be followed when tailoring the resume:\n${rules}`;
   }
+  // Strategy next — sets the optimization approach
+  prompt += getStrategyInstructions(strategyMode || 'hybrid');
+  // Document type last (highest recency weight) — enforces page limits and bullet budgets
+  prompt += getDocumentTypeInstructions(documentType || 'resume');
   return prompt;
 }
 
@@ -1558,6 +1588,10 @@ export async function tailorResume(request: TailorRequest): Promise<TailorRespon
   const decomposedTitle = decomposeJobTitle(jobTitle);
   const headlineGuidance = buildHeadlineGuidance(decomposedTitle);
 
+  const isResume = !documentType || documentType === 'resume';
+  const contentDirective = isResume ? `\n\n**Content Directive:**
+This is a LARGE base resume. Do NOT rewrite it in full. Select only the most relevant content for this specific role. Cut aggressively. Target output: 1 page, 2 bullets per role, 400-500 words max. Remove entire roles and sections that do not serve this JD.` : '';
+
   let messageContent = `Please tailor this resume for the following job:
 
 **Job Title:** ${jobTitle}
@@ -1572,7 +1606,7 @@ ${jobDescription}
 ${requirements.map((r) => `- ${r}`).join('\n')}
 
 **Current Resume:**
-${resumeText}`;
+${resumeText}${contentDirective}`;
 
   if (userPrompt) {
     messageContent += `\n\n**MANDATORY REVISION INSTRUCTIONS (these override base rules — you MUST follow them):**\n${userPrompt}`;
@@ -1638,6 +1672,10 @@ export async function* tailorResumeStream(
   const decomposedTitle = decomposeJobTitle(jobTitle);
   const headlineGuidance = buildHeadlineGuidance(decomposedTitle);
 
+  const isResumeDoc = !documentType || documentType === 'resume';
+  const streamContentDirective = isResumeDoc ? `\n\n**Content Directive:**
+This is a LARGE base resume. Do NOT rewrite it in full. Select only the most relevant content for this specific role. Cut aggressively. Target output: 1 page, 2 bullets per role, 400-500 words max. Remove entire roles and sections that do not serve this JD.` : '';
+
   let messageContent = `Please tailor this resume for the following job:
 
 **Job Title:** ${jobTitle}
@@ -1652,7 +1690,7 @@ ${jobDescription}
 ${requirements.map((r) => `- ${r}`).join('\n')}
 
 **Current Resume:**
-${resumeText}`;
+${resumeText}${streamContentDirective}`;
 
   if (userPrompt) {
     messageContent += `\n\n**MANDATORY REVISION INSTRUCTIONS (these override base rules — you MUST follow them):**\n${userPrompt}`;
