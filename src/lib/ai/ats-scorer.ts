@@ -208,29 +208,47 @@ function scoreHardSkillMatch(
   // Separate JD skills into overlapping (candidate has) vs gap (candidate doesn't have)
   const overlappingSkills: string[] = [];
 
+  console.log(`\n[DIAG:scoreHardSkillMatch] --- Checking ${hardSkills.length} hard skills ---`);
+
   for (const skill of hardSkills) {
+    console.log(`\n[DIAG:scoreHardSkillMatch] Checking skill: "${skill}"`);
+
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 1: Check if "${skill}" exists in ORIGINAL resume...`);
     const inOriginal = originalResume ? termExistsWithSynonyms(skill, originalResume) : true;
 
     if (!inOriginal) {
       // Candidate doesn't have this skill — it's a gap, not a penalty
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: SKILLS GAP (not in original resume)`);
       skillsGap.push(skill);
       continue;
     }
 
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 1 result: FOUND in original resume`);
     overlappingSkills.push(skill);
 
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 2: Check if "${skill}" exists in TAILORED resume...`);
     if (termExistsWithSynonyms(skill, tailoredResume)) {
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: MATCHED (in both original and tailored)`);
       matched.push(skill);
     } else {
       // Skill exists in original but missing from tailored — optimization failure
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: MISSING (in original but NOT in tailored — optimization failure)`);
       missing.push(skill);
     }
   }
 
+  console.log(`\n[DIAG:scoreHardSkillMatch] --- Summary ---`);
+  console.log(`  Matched: [${matched.join(', ')}]`);
+  console.log(`  Missing (optimization failures): [${missing.join(', ')}]`);
+  console.log(`  Skills gap (not in original): [${skillsGap.join(', ')}]`);
+  console.log(`  Overlapping: [${overlappingSkills.join(', ')}]`);
+
   // Score based on overlapping skills only (not the full JD list)
-  if (overlappingSkills.length === 0) return { score: 100, matched, missing, skillsGap };
+  // If zero overlap, the candidate has none of the JD's skills — score is 0, not a free pass
+  if (overlappingSkills.length === 0) return { score: 0, matched, missing, skillsGap };
 
   let weightedScore = 0;
+
   for (const skill of matched) {
     let bestMultiplier = 1.0;
     for (const section of sections) {
@@ -240,10 +258,13 @@ function scoreHardSkillMatch(
       }
     }
 
-    // BM25 frequency saturation
-    const lower = tailoredResume.toLowerCase();
+    // BM25 frequency saturation — use word-boundary matching to avoid substring hits
+    // (e.g., "Java" should not count occurrences inside "JavaScript")
     const skillLower = skill.toLowerCase();
-    const occurrences = lower.split(skillLower).length - 1;
+    const escaped = skillLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wordBoundaryRegex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const occurrences = (tailoredResume.match(wordBoundaryRegex) || []).length;
+
     let frequencyScore = 0;
     if (occurrences >= 1) frequencyScore += 1.0;
     if (occurrences >= 2) frequencyScore += 0.5;
@@ -252,8 +273,13 @@ function scoreHardSkillMatch(
     weightedScore += bestMultiplier * Math.min(frequencyScore, 1.75);
   }
 
-  // Denominator: only overlapping skills (not full JD list)
-  const maxPossible = overlappingSkills.length * 3.0 * 1.75;
+  // Denominator: use a realistic best-case scenario, not "all skills in headline"
+  // Most skills appear in experience (zone 4, multiplier 1.0) with 2 mentions (freq 1.5)
+  // A few top skills appear in summary/skills (zone 2-3, multiplier 1.5-2.0)
+  // The best realistic placement for an average skill is zone 3 (skills section) with 2 mentions
+  const realisticMultiplier = 1.5; // Skills section (zone 3) as realistic best-case average
+  const realisticFrequency = 1.5;  // 2 mentions (1.0 + 0.5)
+  const maxPossible = overlappingSkills.length * realisticMultiplier * realisticFrequency;
   const score = Math.min(100, Math.round((weightedScore / maxPossible) * 100));
 
   return { score, matched, missing, skillsGap };
@@ -270,17 +296,33 @@ const TITLE_NOISE_WORDS = new Set([
   'remote', 'hybrid', 'onsite', 'full-time', 'part-time',
 ]);
 
+/**
+ * Normalize a title for comparison: lowercase, strip separators/punctuation/noise words.
+ * Also strips parenthetical content into separate words so "Backend (Python)" becomes
+ * "backend python" rather than losing the tech keywords.
+ */
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[-–—]/g, ' ')
-    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/[()]/g, ' ')       // Convert parens to spaces (preserve content)
+    .replace(/[-–—|]/g, ' ')     // Convert separators to spaces
+    .replace(/[^a-z0-9+#\s]/g, '') // Keep +/# for C++, C#, etc.
     .split(/\s+/)
     .filter(w => w.length > 0 && !TITLE_NOISE_WORDS.has(w))
     .join(' ')
     .trim();
 }
 
+/**
+ * Score how well the resume headline matches the JD title.
+ *
+ * Scoring tiers:
+ *   100% — exact normalized substring match (verbatim or reordered with all words adjacent)
+ *    95% — all core title words appear in headline (any order) — rewards smart decomposition
+ *    60% — >50% of core title words appear in headline
+ *    30% — title appears elsewhere in the resume body
+ *     0% — no match found
+ */
 function scoreJobTitleAlignment(resume: string, jobTitle: string, sections: ResumeSection[]): {
   score: number; matchType: 'exact' | 'core' | 'partial' | 'elsewhere' | 'none';
 } {
@@ -292,33 +334,49 @@ function scoreJobTitleAlignment(resume: string, jobTitle: string, sections: Resu
   const normalizedTitle = normalizeTitle(jobTitle);
   const resumeLower = resume.toLowerCase();
 
-  // Check headline (first few lines)
+  // Check headline (zone 1) and also summary (zone 2) as fallback for qualifier placement
   const headline = sections.find(s => s.zone === 1);
+  const summary = sections.find(s => s.zone === 2);
   const headlineText = (headline?.content || '').toLowerCase();
   const normalizedHeadline = normalizeTitle(headline?.content || '');
+  const headlinePlusSummary = normalizeTitle(
+    (headline?.content || '') + ' ' + (summary?.content || '')
+  );
 
   // Exact match (after normalization): 100%
   if (normalizedHeadline.includes(normalizedTitle) || headlineText.includes(titleLower)) {
     return { score: 100, matchType: 'exact' };
   }
 
-  // Core title words present (e.g., "Software Engineer" matches "Software Engineer II"): 85%
+  // Word-set matching: all core title words present in headline (any order) — 95%
+  // This rewards smart decomposition like "Backend Software Engineer | Python"
+  // for a JD title "Software Engineer - Backend (Python)"
   const titleCoreWords = normalizedTitle.split(/\s+/).filter(w => w.length > 1);
-  const headlineCoreWords = normalizedHeadline.split(/\s+/);
+  const headlineCoreWords = new Set(normalizedHeadline.split(/\s+/));
+  const headlinePlusSummaryWords = new Set(headlinePlusSummary.split(/\s+/));
 
   if (titleCoreWords.length > 0) {
-    const coreMatchCount = titleCoreWords.filter(w => headlineCoreWords.includes(w)).length;
-    if (coreMatchCount === titleCoreWords.length) {
+    const headlineMatchCount = titleCoreWords.filter(w => headlineCoreWords.has(w)).length;
+
+    // All title words in headline (any order): 95%
+    if (headlineMatchCount === titleCoreWords.length) {
+      return { score: 95, matchType: 'core' };
+    }
+
+    // All title words in headline + summary combined: 85%
+    // (qualifiers placed in summary instead of headline is acceptable)
+    const combinedMatchCount = titleCoreWords.filter(w => headlinePlusSummaryWords.has(w)).length;
+    if (combinedMatchCount === titleCoreWords.length) {
       return { score: 85, matchType: 'core' };
     }
 
-    // Partial overlap (>50% of title words present): 60%
-    if (coreMatchCount >= titleCoreWords.length * 0.5) {
+    // Partial overlap in headline (>50% of title words present): 60%
+    if (headlineMatchCount >= titleCoreWords.length * 0.5) {
       return { score: 60, matchType: 'partial' };
     }
   }
 
-  // Title appears elsewhere in resume (not headline): 30%
+  // Title appears elsewhere in resume (not headline/summary): 30%
   if (resumeLower.includes(titleLower) || resumeLower.includes(normalizedTitle)) {
     return { score: 30, matchType: 'elsewhere' };
   }
@@ -384,10 +442,12 @@ function scoreSoftSkillMatch(resume: string, softSkills: string[]): {
 } {
   const matched: string[] = [];
   const missing: string[] = [];
-  const lower = resume.toLowerCase();
 
   for (const skill of softSkills) {
-    if (lower.includes(skill.toLowerCase())) {
+    // Use word-boundary matching to avoid "communication" matching "telecommunications"
+    const escaped = skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (regex.test(resume)) {
       matched.push(skill);
     } else {
       missing.push(skill);
@@ -426,11 +486,18 @@ function scoreStructuralCompliance(resume: string, sections: ResumeSection[]): {
   if (hasStandard) points += 20;
   else issues.push('Missing standard section headings');
 
-  // 2. Reverse chronological order
-  const years = resume.match(/20\d{2}/g)?.map(Number) || [];
+  // 2. Reverse chronological order (check experience section only, not education/certs)
+  const experienceContent = sections
+    .filter(s => s.zone === 4)
+    .map(s => s.content)
+    .join('\n');
+  const experienceYears = experienceContent.match(/20\d{2}/g)?.map(Number) || [];
+  // Fallback: if no experience section detected, check the full resume
+  const years = experienceYears.length >= 2 ? experienceYears : (resume.match(/20\d{2}/g)?.map(Number) || []);
   let isReverseChron = true;
   if (years.length >= 2) {
-    for (let i = 1; i < Math.min(years.length, 5); i++) {
+    // Check pairs of years — in reverse-chron, each year should be <= the previous (+1 tolerance for ranges)
+    for (let i = 1; i < Math.min(years.length, 8); i++) {
       if (years[i] > years[i - 1] + 1) { isReverseChron = false; break; }
     }
   }
@@ -482,22 +549,22 @@ function scoreStructuralCompliance(resume: string, sections: ResumeSection[]): {
     issues.push('No contact information detected in document body');
   }
 
-  // 5. Appropriate length
+  // 5. Appropriate length (updated for 2-page resume target)
   const wordCount = resume.split(/\s+/).length;
-  const goodLength = wordCount >= 300 && wordCount <= 1200;
-  const okLength = wordCount >= 200 && wordCount <= 1500;
+  const goodLength = wordCount >= 400 && wordCount <= 1500;
+  const okLength = wordCount >= 250 && wordCount <= 1800;
   const lengthCheck: ContentCheck = {
     label: 'Appropriate length',
     passed: goodLength,
-    detail: `${wordCount} words (target: 300-1200)`,
+    detail: `${wordCount} words (target: 400-1500)`,
   };
   contentChecks.push(lengthCheck);
   if (goodLength) points += 20;
   else if (okLength) {
     points += 10;
-    issues.push(`Word count (${wordCount}) is outside optimal range (300-1200)`);
+    issues.push(`Word count (${wordCount}) is outside optimal range (400-1500)`);
   } else {
-    issues.push(`Word count (${wordCount}) is significantly outside optimal range (300-1200)`);
+    issues.push(`Word count (${wordCount}) is significantly outside optimal range (400-1500)`);
   }
 
   // 6. Standard bullets only (no emojis or decorative characters)
@@ -508,6 +575,13 @@ function scoreStructuralCompliance(resume: string, sections: ResumeSection[]): {
     detail: hasDecorative ? 'Decorative characters or emojis detected' : 'Standard characters only',
   };
   contentChecks.push(bulletCheck);
+  if (!hasDecorative) {
+    // No penalty — standard characters used
+  } else {
+    // Deduct from score — decorative chars cause ATS parsing failures
+    points = Math.max(0, points - 15);
+    issues.push('Decorative characters or emojis detected — ATS parsers may misread these');
+  }
 
   return { score: Math.min(100, points), issues, contentChecks };
 }
@@ -543,11 +617,12 @@ function scoreSupplementaryFactors(resume: string, hardSkills: string[]): {
     issues.push('Consider including both acronym and full-term forms for technical abbreviations');
   }
 
-  // No single keyword exceeds 3% density
+  // No single keyword exceeds 3% density — use word-boundary matching
   const wordCount = resume.split(/\s+/).length;
   let stuffingDetected = false;
   for (const skill of hardSkills) {
-    const occurrences = lower.split(skill.toLowerCase()).length - 1;
+    const escaped = skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const occurrences = (resume.match(new RegExp(`\\b${escaped}\\b`, 'gi')) || []).length;
     const density = wordCount > 0 ? (occurrences / wordCount) * 100 : 0;
     if (density > 3) {
       stuffingDetected = true;
@@ -556,11 +631,26 @@ function scoreSupplementaryFactors(resume: string, hardSkills: string[]): {
   }
   if (!stuffingDetected) points += 25;
 
-  // Spelling consistency (simplified)
-  points += 25;
+  // Date consistency check (spelling consistency proxy)
+  const monthYearDates = resume.match(/(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/g) || [];
+  const abbrDates = resume.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}/g) || [];
+  const numDates = resume.match(/\d{1,2}\/\d{4}/g) || [];
+  const dateFormats = [monthYearDates.length > 0, abbrDates.length > 0, numDates.length > 0].filter(Boolean).length;
+  if (dateFormats <= 1) {
+    points += 25;
+  } else {
+    issues.push('Mixed date formats detected — use a consistent format throughout');
+  }
 
-  // Remaining factor
-  points += 25;
+  // Contact info completeness (email + phone + LinkedIn = full marks)
+  const hasEmail = /@/.test(resume);
+  const hasPhone = /\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/.test(resume);
+  const hasLinkedIn = /linkedin\.com/i.test(resume);
+  const contactScore = [hasEmail, hasPhone, hasLinkedIn].filter(Boolean).length;
+  if (contactScore >= 3) points += 25;
+  else if (contactScore >= 2) points += 15;
+  else if (contactScore >= 1) points += 5;
+  else issues.push('Missing contact information — include email, phone, and LinkedIn');
 
   return { score: Math.min(100, points), issues };
 }
@@ -579,7 +669,6 @@ function generateRecommendations(
   t6: { score: number; issues: string[] },
 ): string[] {
   const recommendations: string[] = [];
-  const resumeLower = tailoredResume.toLowerCase();
 
   // Tier 2: Job title alignment
   if (t2.score < 85 && jobTitle) {
@@ -649,6 +738,24 @@ export function computeATSScore(
   const jobTitle = processedJD.jobTitle;
   const sections = parseResumeSections(tailoredResume);
 
+  // DIAG: Log what text is being scored and what skills are being checked
+  const isTailoredScoring = tailoredResume !== originalResume;
+  console.log(`\n${'='.repeat(80)}`);
+  console.log(`[DIAG:computeATSScore] Scoring ${isTailoredScoring ? 'TAILORED' : 'ORIGINAL'} resume`);
+  console.log(`[DIAG:computeATSScore] Tailored resume length: ${tailoredResume.length} chars, ${tailoredResume.split(/\s+/).length} words`);
+  console.log(`[DIAG:computeATSScore] Tailored resume first 500 chars:\n---\n${tailoredResume.substring(0, 500)}\n---`);
+  if (originalResume) {
+    console.log(`[DIAG:computeATSScore] Original resume length: ${originalResume.length} chars, ${originalResume.split(/\s+/).length} words`);
+    console.log(`[DIAG:computeATSScore] Original resume first 500 chars:\n---\n${originalResume.substring(0, 500)}\n---`);
+  } else {
+    console.log(`[DIAG:computeATSScore] Original resume: NOT PROVIDED`);
+  }
+  console.log(`[DIAG:computeATSScore] JD Hard Skills (${hardSkills.length}): [${hardSkills.join(', ')}]`);
+  console.log(`[DIAG:computeATSScore] JD Soft Skills (${softSkills.length}): [${softSkills.join(', ')}]`);
+  console.log(`[DIAG:computeATSScore] Job Title: "${jobTitle}"`);
+  console.log(`[DIAG:computeATSScore] Parsed sections: ${sections.map(s => `${s.name}(zone${s.zone})`).join(', ')}`);
+  console.log(`${'='.repeat(80)}\n`);
+
   // TIER 0: Parsing Gate
   const parsingGate = checkParsingGate(tailoredResume);
   if (!parsingGate.passed) {
@@ -696,11 +803,11 @@ export function computeATSScore(
     ? Math.round((overlappingCount / hardSkills.length) * 100)
     : 100;
 
-  // Keyword density breakdown (only for matched/overlapping skills)
+  // Keyword density breakdown (only for matched/overlapping skills) — word-boundary matching
   const wordCount = tailoredResume.split(/\s+/).length;
-  const resumeLower = tailoredResume.toLowerCase();
   const keywordDensity = t1.matched.map(skill => {
-    const occurrences = resumeLower.split(skill.toLowerCase()).length - 1;
+    const escaped = skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const occurrences = (tailoredResume.match(new RegExp(`\\b${escaped}\\b`, 'gi')) || []).length;
     const density = wordCount > 0 ? (occurrences / wordCount) * 100 : 0;
     return { term: skill, density: Math.round(density * 100) / 100, overStuffed: density > 3 };
   });
@@ -774,19 +881,34 @@ export function scoreCoverLetter(
     recommendations.push(`Weave these JD keywords into the cover letter: ${missingKeywords.join(', ')}`);
   }
 
-  // 2. Pain Point Coverage (30%) — use relevant JD text instead of raw
+  // 2. Pain Point Coverage (30%) — use relevant JD text and extracted skills
   const relevantText = processedJD.sections.fullRelevantText;
   const jdSentences = relevantText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
+  // Identify requirement sentences: must contain a requirement keyword AND at least one hard skill
   const topRequirements = jdSentences
-    .filter(s => /require|responsib|must|essential|key|lead|manage|develop|build|design/i.test(s))
-    .slice(0, 3);
+    .filter(s => {
+      const hasReqKeyword = /require|responsib|must|essential|key qualif|minimum|expected/i.test(s);
+      const hasSkill = hardSkills.some(skill => {
+        const escaped = skill.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`\\b${escaped}\\b`, 'i').test(s);
+      });
+      return hasReqKeyword || hasSkill;
+    })
+    .slice(0, 5);
 
   const addressed: string[] = [];
   const missed: string[] = [];
   for (const req of topRequirements) {
-    const reqWords = req.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-    const matchCount = reqWords.filter(w => clLower.includes(w)).length;
-    if (matchCount >= reqWords.length * 0.3) {
+    // Check if the cover letter addresses this requirement by matching
+    // hard skills and significant content words from the requirement
+    const reqContentWords = req.toLowerCase().split(/\s+/)
+      .filter(w => w.length > 3 && !['the','and','with','that','this','from','have','been','will','must'].includes(w));
+    const skillsInReq = hardSkills.filter(skill => req.toLowerCase().includes(skill.toLowerCase()));
+    const skillsAddressed = skillsInReq.filter(skill => termExistsWithSynonyms(skill, coverLetter));
+    const contentMatch = reqContentWords.filter(w => clLower.includes(w)).length;
+
+    // Addressed if: relevant skills mentioned OR significant content overlap
+    if (skillsAddressed.length > 0 || (reqContentWords.length > 0 && contentMatch >= reqContentWords.length * 0.4)) {
       addressed.push(req.substring(0, 80) + (req.length > 80 ? '...' : ''));
     } else {
       missed.push(req.substring(0, 80) + (req.length > 80 ? '...' : ''));
@@ -807,14 +929,27 @@ export function scoreCoverLetter(
   if (wordCount > 400) recommendations.push(`Cover letter is too long (${wordCount} words). Target 250-400 words.`);
 
   // 4. No Resume Duplication (10%)
+  // Filter out common/stop words so overlap measures meaningful content words only
+  const DUPLICATION_STOP_WORDS = new Set([
+    'the','a','an','and','or','of','to','in','for','with','on','at','by','from',
+    'is','are','was','were','be','been','have','has','had','do','does','did',
+    'will','would','can','could','should','may','might','not','but','if','than',
+    'that','this','these','those','it','its','my','your','our','their','his','her',
+    'we','they','i','you','he','she','me','us','them','who','which','what','where',
+    'when','how','all','each','both','more','most','other','some','such','so','too',
+    'very','just','about','also','as','into','over','through','then','there',
+  ]);
   const clSentences = coverLetter.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 20);
   const resumeLower = resumeText.toLowerCase();
+  const resumeContentWords = new Set(
+    resumeLower.split(/\s+/).filter(w => w.length > 2 && !DUPLICATION_STOP_WORDS.has(w))
+  );
   const duplicatedSentences: string[] = [];
   for (const sentence of clSentences) {
-    const words = sentence.toLowerCase().split(/\s+/);
-    const resumeWords = resumeLower.split(/\s+/);
-    const overlapCount = words.filter(w => resumeWords.includes(w)).length;
-    if (words.length > 5 && overlapCount / words.length > 0.8) {
+    const contentWords = sentence.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !DUPLICATION_STOP_WORDS.has(w));
+    if (contentWords.length < 4) continue; // Too short to meaningfully compare
+    const overlapCount = contentWords.filter(w => resumeContentWords.has(w)).length;
+    if (overlapCount / contentWords.length > 0.85) {
       duplicatedSentences.push(sentence.substring(0, 60) + '...');
     }
   }

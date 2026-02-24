@@ -26,6 +26,7 @@ export interface TailoredResume {
   changes: string[];
   flaggedKeywords?: string[];
   verifiedChanges?: FeedbackVerification[];
+  validationWarnings?: string[];
 }
 
 export interface TailoredCoverLetter {
@@ -34,6 +35,7 @@ export interface TailoredCoverLetter {
   changes: string[];
   flaggedKeywords?: string[];
   verifiedChanges?: FeedbackVerification[];
+  validationWarnings?: string[];
 }
 
 interface ResumeState {

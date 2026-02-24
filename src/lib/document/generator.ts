@@ -6,6 +6,7 @@ import {
   Packer,
   AlignmentType,
   BorderStyle,
+  PageBreak,
 } from 'docx';
 import { parseResumeIntoSections } from './parse-sections';
 
@@ -27,6 +28,31 @@ function parseMarkdownBold(
   });
 }
 
+/**
+ * Detect if a line looks like a role/company header within an experience section.
+ * Patterns: "Software Engineer | Company Name" or "Company Name - Role" or bold text.
+ */
+function isRoleLine(line: string): boolean {
+  const trimmed = line.trim();
+  // Contains pipe or dash separator typical of role lines
+  if (/\s+[|]\s+/.test(trimmed) || /\s+[-–—]\s+/.test(trimmed)) {
+    // But not bullet points
+    if (!trimmed.startsWith('-') && !trimmed.startsWith('•')) return true;
+  }
+  // Entirely bold markdown
+  if (/^\*\*.+\*\*$/.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * Detect if a line contains a date range (likely a role date line).
+ * E.g., "January 2020 - Present" or "01/2020 - 03/2022"
+ */
+function isDateLine(line: string): boolean {
+  return /(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\s*[-–—]\s*(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4}|Present|Current)/i.test(line) ||
+    /\d{1,2}\/\d{4}\s*[-–—]\s*(?:\d{1,2}\/\d{4}|Present|Current)/i.test(line);
+}
+
 // Generate DOCX document
 export async function generateDOCX(
   resumeText: string,
@@ -41,6 +67,10 @@ export async function generateDOCX(
 
   // Force ATS-compliant black text
   const atsColor = '000000';
+
+  // Track content height estimate for page break hints
+  let estimatedLines = 0;
+  const LINES_PER_PAGE = 45; // Rough estimate for page breaks
 
   for (const section of sections) {
     if (section.title === 'Header') {
@@ -62,6 +92,7 @@ export async function generateDOCX(
             spacing: { after: i === 0 ? 200 : 100 },
           })
         );
+        estimatedLines++;
       }
 
       // Add separator after header
@@ -80,6 +111,17 @@ export async function generateDOCX(
         );
       }
     } else {
+      // Add page break hint before a new major section if we're near the page boundary
+      // This prevents orphaned section headers at the bottom of a page
+      if (estimatedLines > LINES_PER_PAGE - 5 && estimatedLines < LINES_PER_PAGE + 5) {
+        children.push(
+          new Paragraph({
+            children: [new PageBreak()],
+          })
+        );
+        estimatedLines = 0;
+      }
+
       // Section header
       children.push(
         new Paragraph({
@@ -106,23 +148,75 @@ export async function generateDOCX(
               : undefined,
         })
       );
+      estimatedLines += 2;
 
-      // Section content
+      // Section content with role/date/bullet differentiation
       for (const line of section.content) {
-        const isBullet = line.trim().startsWith('-') || line.trim().startsWith('•');
-        const cleanLine = line.replace(/^[-•]\s*/, '');
+        const trimmed = line.trim();
+        const isBullet = trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*');
+        const cleanLine = isBullet ? trimmed.replace(/^[-•*]\s*/, '') : trimmed;
 
-        children.push(
-          new Paragraph({
-            children: parseMarkdownBold(cleanLine, {
-              size: styles.textSize,
-              font: styles.font,
-              color: atsColor,
-            }),
-            bullet: isBullet ? { level: 0 } : undefined,
-            spacing: { after: 100 },
-          })
-        );
+        if (isRoleLine(trimmed) && !isBullet) {
+          // Role/Company line — bold
+          // Strip markdown bold markers since we're making the whole line bold
+          const plainLine = cleanLine.replace(/\*\*/g, '');
+          children.push(
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: plainLine,
+                  bold: true,
+                  size: styles.textSize,
+                  font: styles.font,
+                  color: atsColor,
+                }),
+              ],
+              spacing: { before: 150, after: 50 },
+            })
+          );
+        } else if (isDateLine(trimmed) && !isBullet) {
+          // Date range line — italic, right-aligned or inline
+          children.push(
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: trimmed,
+                  italics: true,
+                  size: styles.textSize,
+                  font: styles.font,
+                  color: atsColor,
+                }),
+              ],
+              spacing: { after: 100 },
+            })
+          );
+        } else if (isBullet) {
+          // Bullet point
+          children.push(
+            new Paragraph({
+              children: parseMarkdownBold(cleanLine, {
+                size: styles.textSize,
+                font: styles.font,
+                color: atsColor,
+              }),
+              bullet: { level: 0 },
+              spacing: { after: 80 },
+            })
+          );
+        } else {
+          // Regular content line
+          children.push(
+            new Paragraph({
+              children: parseMarkdownBold(cleanLine, {
+                size: styles.textSize,
+                font: styles.font,
+                color: atsColor,
+              }),
+              spacing: { after: 100 },
+            })
+          );
+        }
+        estimatedLines++;
       }
     }
   }
@@ -140,8 +234,8 @@ export async function generateDOCX(
 }
 
 /**
- * Generate a simpler paragraph-based DOCX for cover letters.
- * No section headers — just flowing prose with consistent styling.
+ * Generate a DOCX for cover letters.
+ * Handles prose paragraphs, greeting/closing, and optional bullet points.
  */
 export async function generateCoverLetterDOCX(
   coverLetterText: string,
@@ -159,7 +253,7 @@ export async function generateCoverLetterDOCX(
 
     // Check if this looks like a greeting (Dear...) or closing (Sincerely,)
     const isGreeting = /^dear\s/i.test(trimmed);
-    const isClosing = /^(sincerely|regards|best regards|warm regards|respectfully|thank you)/i.test(trimmed);
+    const isClosing = /^(sincerely|regards|best regards|warm regards|respectfully|thank you|best|cheers)/i.test(trimmed);
 
     if (isGreeting || isClosing) {
       children.push(
@@ -173,18 +267,57 @@ export async function generateCoverLetterDOCX(
         })
       );
     } else {
-      // Regular body paragraph — join any single newlines within
-      const text = trimmed.replace(/\n/g, ' ');
-      children.push(
-        new Paragraph({
-          children: parseMarkdownBold(text, {
-            size: styles.textSize,
-            font: styles.font,
-            color: atsColor,
-          }),
-          spacing: { after: 200 },
-        })
-      );
+      // Check if this paragraph contains bullet points (lines starting with - or *)
+      const lines = trimmed.split('\n');
+      const hasBullets = lines.some(l => /^\s*[-•*]\s/.test(l));
+
+      if (hasBullets) {
+        // Process mixed prose and bullets within a paragraph
+        for (const line of lines) {
+          const lineTrimmed = line.trim();
+          if (!lineTrimmed) continue;
+
+          const isBullet = /^[-•*]\s/.test(lineTrimmed);
+          if (isBullet) {
+            const bulletText = lineTrimmed.replace(/^[-•*]\s*/, '');
+            children.push(
+              new Paragraph({
+                children: parseMarkdownBold(bulletText, {
+                  size: styles.textSize,
+                  font: styles.font,
+                  color: atsColor,
+                }),
+                bullet: { level: 0 },
+                spacing: { after: 80 },
+              })
+            );
+          } else {
+            children.push(
+              new Paragraph({
+                children: parseMarkdownBold(lineTrimmed, {
+                  size: styles.textSize,
+                  font: styles.font,
+                  color: atsColor,
+                }),
+                spacing: { after: 100 },
+              })
+            );
+          }
+        }
+      } else {
+        // Regular body paragraph — join any single newlines within
+        const text = trimmed.replace(/\n/g, ' ');
+        children.push(
+          new Paragraph({
+            children: parseMarkdownBold(text, {
+              size: styles.textSize,
+              font: styles.font,
+              color: atsColor,
+            }),
+            spacing: { after: 200 },
+          })
+        );
+      }
     }
   }
 
@@ -207,8 +340,8 @@ export function getTemplateStyles(template: TemplateStyle) {
         font: 'Calibri',
         nameSize: 32,
         sectionSize: 24,
-        textSize: 22,
-        accentColor: '2563EB', // Blue
+        textSize: 22,       // 11pt
+        accentColor: '2563EB',
         headerAlignment: AlignmentType.LEFT,
       };
     case 'classic':
@@ -216,17 +349,17 @@ export function getTemplateStyles(template: TemplateStyle) {
         font: 'Times New Roman',
         nameSize: 28,
         sectionSize: 22,
-        textSize: 22,
-        accentColor: '000000', // Black
+        textSize: 22,       // 11pt
+        accentColor: '000000',
         headerAlignment: AlignmentType.CENTER,
       };
     case 'minimal':
       return {
         font: 'Arial',
         nameSize: 28,
-        sectionSize: 20,
-        textSize: 20,
-        accentColor: '374151', // Gray
+        sectionSize: 22,
+        textSize: 22,       // 11pt (was 20/10pt — too small for ATS readability)
+        accentColor: '374151',
         headerAlignment: AlignmentType.LEFT,
       };
     default:
@@ -234,8 +367,7 @@ export function getTemplateStyles(template: TemplateStyle) {
   }
 }
 
-// For PDF generation, we'll use a server-side approach
-// This function returns the data needed for PDF generation
+// For PDF generation, we'll generate data needed for the PDF
 export function preparePDFData(resumeText: string, template: TemplateStyle) {
   const sections = parseResumeIntoSections(resumeText);
   const styles = getTemplateStyles(template);

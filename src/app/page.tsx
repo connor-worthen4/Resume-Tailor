@@ -332,6 +332,7 @@ export default function Home() {
             text: data.tailoredResume as string,
             changes: data.changes as string[],
             flaggedKeywords: (data.flaggedKeywords as string[]) || [],
+            validationWarnings: (data.validationWarnings as string[]) || [],
           });
           if (data.atsScore) setResumeATSScore(data.atsScore as import('@/lib/ai/ats-scorer').ATSScoreResult);
           if (data.originalATSScore) setOriginalResumeATSScore(data.originalATSScore as import('@/lib/ai/ats-scorer').ATSScoreResult);
@@ -351,6 +352,7 @@ export default function Home() {
               painPoints: (data.painPoints as string[]) || [],
               changes: (data.changes as string[]) || [],
               flaggedKeywords: (data.flaggedKeywords as string[]) || [],
+              validationWarnings: (data.validationWarnings as string[]) || [],
             });
             if (data.coverLetterScore) setCoverLetterScore(data.coverLetterScore as import('@/lib/ai/ats-scorer').CoverLetterScoreResult);
           },
@@ -441,6 +443,7 @@ export default function Home() {
                   changes: (data.changes as string[]) || [],
                   flaggedKeywords: (data.flaggedKeywords as string[]) || [],
                   verifiedChanges: (data.verifiedChanges as FeedbackVerification[]) || [],
+                  validationWarnings: (data.validationWarnings as string[]) || [],
                 });
                 if (data.coverLetterScore) setCoverLetterScore(data.coverLetterScore as import('@/lib/ai/ats-scorer').CoverLetterScoreResult);
               }
@@ -451,6 +454,7 @@ export default function Home() {
                   changes: data.changes as string[],
                   flaggedKeywords: (data.flaggedKeywords as string[]) || [],
                   verifiedChanges: (data.verifiedChanges as FeedbackVerification[]) || [],
+                  validationWarnings: (data.validationWarnings as string[]) || [],
                 });
                 if (data.atsScore) setCvATSScore(data.atsScore as import('@/lib/ai/ats-scorer').ATSScoreResult);
               }
@@ -460,6 +464,7 @@ export default function Home() {
                   changes: data.changes as string[],
                   flaggedKeywords: (data.flaggedKeywords as string[]) || [],
                   verifiedChanges: (data.verifiedChanges as FeedbackVerification[]) || [],
+                  validationWarnings: (data.validationWarnings as string[]) || [],
                 });
                 if (data.atsScore) setResumeATSScore(data.atsScore as import('@/lib/ai/ats-scorer').ATSScoreResult);
               };
@@ -491,6 +496,7 @@ export default function Home() {
                 text: data.tailoredResume as string,
                 changes: data.changes as string[],
                 flaggedKeywords: (data.flaggedKeywords as string[]) || [],
+                validationWarnings: (data.validationWarnings as string[]) || [],
               });
             },
           );
@@ -505,6 +511,7 @@ export default function Home() {
                 text: data.tailoredResume as string,
                 changes: data.changes as string[],
                 flaggedKeywords: (data.flaggedKeywords as string[]) || [],
+                validationWarnings: (data.validationWarnings as string[]) || [],
               });
             },
           );
@@ -520,6 +527,7 @@ export default function Home() {
                 painPoints: (data.painPoints as string[]) || [],
                 changes: (data.changes as string[]) || [],
                 flaggedKeywords: (data.flaggedKeywords as string[]) || [],
+                validationWarnings: (data.validationWarnings as string[]) || [],
               });
             },
           );
@@ -1041,6 +1049,7 @@ export default function Home() {
                       changes={tailoredResume.changes}
                       flaggedKeywords={tailoredResume.flaggedKeywords}
                       verifiedChanges={tailoredResume.verifiedChanges}
+                      validationWarnings={tailoredResume.validationWarnings}
                       previousDraft={previousDraftPerTab.resume}
                       feedbackHistory={feedbackHistoryPerTab.resume}
                       docLabel="Resume"
@@ -1055,6 +1064,7 @@ export default function Home() {
                         changes={tailoredCV.changes}
                         flaggedKeywords={tailoredCV.flaggedKeywords}
                         verifiedChanges={tailoredCV.verifiedChanges}
+                        validationWarnings={tailoredCV.validationWarnings}
                         previousDraft={previousDraftPerTab.cv}
                         feedbackHistory={feedbackHistoryPerTab.cv}
                         docLabel="CV"
@@ -1070,6 +1080,7 @@ export default function Home() {
                         changes={tailoredCoverLetter.changes}
                         flaggedKeywords={tailoredCoverLetter.flaggedKeywords}
                         verifiedChanges={tailoredCoverLetter.verifiedChanges}
+                        validationWarnings={tailoredCoverLetter.validationWarnings}
                         previousDraft={previousDraftPerTab.cover_letter}
                         feedbackHistory={feedbackHistoryPerTab.cover_letter}
                       />
@@ -1083,6 +1094,7 @@ export default function Home() {
                   changes={tailoredResume.changes}
                   flaggedKeywords={tailoredResume.flaggedKeywords}
                   verifiedChanges={tailoredResume.verifiedChanges}
+                  validationWarnings={tailoredResume.validationWarnings}
                   previousDraft={previousDraftPerTab.resume}
                   feedbackHistory={feedbackHistoryPerTab.resume}
                   docLabel="Resume"

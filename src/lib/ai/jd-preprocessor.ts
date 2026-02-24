@@ -36,6 +36,7 @@ export interface ExtractedSkills {
   yearsExperience?: string;
   degreeRequirement?: string;
   certifications?: string[];
+  extractionMethod?: Record<string, 'dictionary' | 'pattern' | 'both'>;
 }
 
 export interface RequirementMetadata {
@@ -55,6 +56,7 @@ export interface ProcessedJD {
     totalWordsInRelevant: number;
     noisePercentageFiltered: number;
     extractionMethod: Record<string, 'dictionary' | 'pattern' | 'both'>;
+    warning?: string;
   };
 }
 
@@ -72,9 +74,13 @@ export function cleanJDText(rawText: string): string {
   text = text.replace(/:([A-Z])/g, ': $1');
   text = text.replace(/;([A-Z])/g, '; $1');
 
-  // Normalize whitespace
-  text = text.replace(/[\r\n\t]+/g, ' ');
-  text = text.replace(/\s{2,}/g, ' ');
+  // Normalize whitespace — PRESERVE newlines for section segmentation.
+  // Only collapse tabs and excessive spaces within lines; keep line breaks intact.
+  text = text.replace(/\r\n/g, '\n');           // Normalize CRLF to LF
+  text = text.replace(/\r/g, '\n');             // Normalize standalone CR
+  text = text.replace(/\t/g, ' ');              // Tabs to spaces
+  text = text.replace(/ {2,}/g, ' ');           // Collapse multiple spaces (but not newlines)
+  text = text.replace(/\n{4,}/g, '\n\n\n');     // Cap excessive blank lines at 3
 
   // Replace smart/curly quotes with straight quotes
   text = text.replace(/[\u2018\u2019\u201A\u201B]/g, "'");
@@ -318,8 +324,18 @@ function heuristicSegmentation(cleanedText: string): JDSections {
 function isNoiseSentence(sentence: string): boolean {
   const lower = sentence.toLowerCase();
 
-  // Salary patterns
-  if (/\$[\d,]+/.test(sentence)) return true;
+  // Guard: if the sentence contains a known tech skill, it's likely real JD content
+  // even if it mentions a dollar amount (e.g., "Managed budgets exceeding $5M")
+  const hasTechContext = TECH_SKILL_LOOKUP.has(lower.split(/\s+/).find(w => TECH_SKILL_LOOKUP.has(w)) || '') ||
+    /(?:manage|develop|build|design|implement|architect|deploy|maintain|revenue|budget|pipeline)/i.test(sentence);
+
+  // Salary patterns — but only if no tech context
+  if (/\$[\d,]+/.test(sentence) && !hasTechContext) {
+    // Additional guard: salary lines typically have range patterns or compensation keywords
+    if (/\$[\d,]+\s*[-–]\s*\$[\d,]+/.test(sentence) || /salary|compensation|pay range|base pay/i.test(lower)) {
+      return true;
+    }
+  }
 
   // Location lists: "City | City | City"
   if (/\w+\s*\|\s*\w+\s*\|\s*\w+/.test(sentence)) return true;
@@ -560,22 +576,24 @@ export function extractSkillsFromJD(relevantText: string): ExtractedSkills {
     }
   }
 
-  // If tech dictionary matched < 3 skills, try domain-specific dictionaries (Step 21)
-  if (hardSkills.size < 3) {
-    const domainDicts = [
-      { name: 'marketing', lookup: buildDomainLookup(MARKETING_SKILLS) },
-      { name: 'finance', lookup: buildDomainLookup(FINANCE_SKILLS) },
-      { name: 'data', lookup: buildDomainLookup(DATA_SKILLS) },
-      { name: 'design', lookup: buildDomainLookup(DESIGN_SKILLS) },
-      { name: 'pm', lookup: buildDomainLookup(PM_SKILLS) },
-    ];
+  // Always run domain-specific dictionaries — hybrid roles (e.g., Technical PM,
+  // Marketing Engineer) need both tech AND domain skills extracted.
+  // Previously gated behind hardSkills.size < 3 which missed domain skills in hybrid roles.
+  const domainDicts = [
+    { name: 'marketing', lookup: buildDomainLookup(MARKETING_SKILLS) },
+    { name: 'finance', lookup: buildDomainLookup(FINANCE_SKILLS) },
+    { name: 'data', lookup: buildDomainLookup(DATA_SKILLS) },
+    { name: 'design', lookup: buildDomainLookup(DESIGN_SKILLS) },
+    { name: 'pm', lookup: buildDomainLookup(PM_SKILLS) },
+  ];
 
-    for (const domain of domainDicts) {
-      for (const [skillLower, canonical] of domain.lookup.entries()) {
-        if (textLower.includes(skillLower)) {
-          hardSkills.add(canonical);
-          extractionMethod[canonical] = extractionMethod[canonical] ? 'both' : 'dictionary';
-        }
+  for (const domain of domainDicts) {
+    for (const [skillLower, canonical] of domain.lookup.entries()) {
+      // Skip if already found by tech dictionary to avoid duplicates
+      if (hardSkills.has(canonical)) continue;
+      if (textLower.includes(skillLower)) {
+        hardSkills.add(canonical);
+        extractionMethod[canonical] = extractionMethod[canonical] ? 'both' : 'dictionary';
       }
     }
   }
@@ -605,12 +623,19 @@ export function extractSkillsFromJD(relevantText: string): ExtractedSkills {
     }
   }
 
+  // DIAG: Log pre-normalization skills
+  console.log(`\n[DIAG:extractSkillsFromJD] Pre-normalization hard skills (${hardSkills.size}):`, Array.from(hardSkills));
+  console.log(`[DIAG:extractSkillsFromJD] Extraction methods:`, extractionMethod);
+
   // Apply synonym normalization: group variants together, keep canonical form
   const normalizedHard = normalizeSynonyms(Array.from(hardSkills));
+
+  console.log(`[DIAG:extractSkillsFromJD] Post-normalization hard skills (${normalizedHard.length}):`, normalizedHard);
 
   return {
     hardSkills: normalizedHard,
     softSkills: Array.from(softSkills),
+    extractionMethod,
   };
 }
 
@@ -658,36 +683,50 @@ function extractSkillsFromPatterns(text: string): string[] {
 }
 
 function normalizeSynonyms(skills: string[]): string[] {
+  console.log(`[DIAG:normalizeSynonyms] Input skills (${skills.length}):`, skills);
+
   const result: string[] = [];
   const seen = new Set<string>();
 
   for (const skill of skills) {
     const lower = skill.toLowerCase();
-    if (seen.has(lower)) continue;
+    if (seen.has(lower)) {
+      console.log(`[DIAG:normalizeSynonyms] "${skill}" => SKIPPED (already seen as "${lower}")`);
+      continue;
+    }
 
-    // Check synonym map — if this skill is a synonym of another, keep both but don't duplicate
+    // Check synonym map — if this skill is a synonym of another, keep the most
+    // recognizable form (prefer the abbreviation/acronym as the canonical key since
+    // termExistsWithSynonyms handles expansion during matching)
     const synonymKey = Object.entries(SYNONYM_MAP).find(
       ([key, values]) => key === lower || values.some(v => v === lower)
     );
 
     if (synonymKey) {
-      // Add the canonical form (the key)
       const canonicalLower = synonymKey[0];
       if (!seen.has(canonicalLower)) {
-        result.push(skill);
+        // Use the abbreviation (map key) as canonical since it's shorter and
+        // termExistsWithSynonyms will resolve it to full forms during scoring.
+        // But preserve the original case if available in the skill list.
+        const abbreviation = skills.find(s => s.toLowerCase() === canonicalLower) || synonymKey[0].toUpperCase();
+        console.log(`[DIAG:normalizeSynonyms] "${skill}" => NORMALIZED to "${abbreviation}" (synonym key: "${synonymKey[0]}", values: [${synonymKey[1].join(', ')}])`);
+        result.push(abbreviation);
         seen.add(lower);
         seen.add(canonicalLower);
-        // Also mark all synonym values as seen
         for (const syn of synonymKey[1]) {
           seen.add(syn.toLowerCase());
         }
+      } else {
+        console.log(`[DIAG:normalizeSynonyms] "${skill}" => SKIPPED (canonical "${canonicalLower}" already seen)`);
       }
     } else {
+      console.log(`[DIAG:normalizeSynonyms] "${skill}" => KEPT AS-IS (no synonym mapping found)`);
       result.push(skill);
       seen.add(lower);
     }
   }
 
+  console.log(`[DIAG:normalizeSynonyms] Output skills (${result.length}):`, result);
   return result;
 }
 
@@ -746,11 +785,20 @@ export function extractRequirementMetadata(relevantText: string): RequirementMet
 export function preprocessJobDescription(rawJDText: string, jobTitle?: string): ProcessedJD {
   const totalWordsInRaw = rawJDText.split(/\s+/).length;
 
+  console.log(`\n${'*'.repeat(80)}`);
+  console.log(`[DIAG:preprocessJD] Raw JD text length: ${rawJDText.length} chars, ${totalWordsInRaw} words`);
+  console.log(`[DIAG:preprocessJD] Job title: "${jobTitle || 'not provided'}"`);
+  console.log(`${'*'.repeat(80)}\n`);
+
   // Step 1: Clean
   const cleanedText = cleanJDText(rawJDText);
 
   // Step 2: Segment
   const sections = segmentJDSections(cleanedText);
+
+  console.log(`[DIAG:preprocessJD] Relevant text length: ${sections.fullRelevantText.length} chars`);
+  console.log(`[DIAG:preprocessJD] Relevant sections: ${Object.keys(sections.relevant).join(', ') || 'none'}`);
+  console.log(`[DIAG:preprocessJD] Noise sections: ${Object.keys(sections.noise).join(', ') || 'none'}`);
 
   // Step 3: Extract skills from relevant sections
   const extractedSkills = extractSkillsFromJD(sections.fullRelevantText);
@@ -763,11 +811,10 @@ export function preprocessJobDescription(rawJDText: string, jobTitle?: string): 
     ? Math.round(((totalWordsInRaw - totalWordsInRelevant) / totalWordsInRaw) * 100)
     : 0;
 
-  // Step 20: Short JD handling
-  let warning: string | undefined;
-  if (extractedSkills.hardSkills.length < 3) {
-    warning = 'Very few technical skills detected in JD. The ATS score may be less precise.';
-  }
+  // Step 20: Short JD handling — tracked in debug output
+  const shortJdWarning = extractedSkills.hardSkills.length < 3
+    ? 'Very few technical skills detected in JD. The ATS score may be less precise.'
+    : undefined;
 
   return {
     cleanedText,
@@ -779,7 +826,8 @@ export function preprocessJobDescription(rawJDText: string, jobTitle?: string): 
       totalWordsInRaw,
       totalWordsInRelevant,
       noisePercentageFiltered,
-      extractionMethod: {},
+      extractionMethod: extractedSkills.extractionMethod || {},
+      warning: shortJdWarning,
     },
   };
 }

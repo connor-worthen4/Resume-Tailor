@@ -12,9 +12,23 @@ Relevance Filter: Every skill or achievement added must directly map to a requir
 
 Employment Dates: Never alter start/end dates for any position.
 
+## Content Selection
+
+The primary job of tailoring is SELECTING and TRIMMING, not rewriting everything. A focused resume that only includes JD-relevant content will always outperform a bloated resume with synonyms swapped in.
+
+Trimming Philosophy: Start by deciding what to REMOVE. For each role, ask: "Does this role demonstrate skills the JD requires?" If not, cut it entirely. For each bullet within a kept role, ask: "Is this one of the 2 strongest bullets for this JD?" If not, cut it.
+
+Role Budget: Maximum 3-4 roles in the Experience section. Cut older or irrelevant roles entirely rather than summarizing them.
+
+Bullet Budget: 2 bullets per role. Pick the 2 that best demonstrate JD-required skills or outcomes. Do not rewrite every bullet from the base resume.
+
+Section Pruning: Remove entire sections (Projects, Volunteer, Awards) if they do not directly serve the target JD. Every section must earn its place.
+
+Page Target: 400-500 words total for a 1-page resume. This is a hard constraint.
+
 ## Tailoring Strategy
 
-Keyword Mirroring: Identify the top 5 technical skills and 3 soft skills from the job description. Ensure these exact terms appear in the "Professional Summary" and "Skills" sections.
+Keyword Selection: Identify the top 5 technical skills and 3 soft skills from the job description. Achieve keyword coverage by selecting bullets that already contain or naturally support these terms. Place JD keywords by choosing the right content, not by injecting terms into every sentence.
 
 ATS-Friendly Headers: Use only standard section titles: Work Experience, Education, Skills, and Projects. Avoid creative titles like "My Journey" or "Expertise."
 
@@ -28,7 +42,7 @@ Date Consistency: Use "Month YYYY" (e.g., "January 2023") or "MM/YYYY" (e.g., "0
 
 Contact Information: Place all contact details (name, phone, email, LinkedIn URL, city/state) in the main document body, never in headers, footers, or text boxes. Display the LinkedIn URL as visible text.
 
-## Phase 3: High-Impact Expansion & ATS Alignment
+## Phase 3: High-Impact Refinement & ATS Alignment
 
 ### Verb Bank (Required Usage)
 
@@ -40,14 +54,13 @@ When rewriting bullet points, prioritize the following verbs. Match the verb cat
 - **Communication:** Negotiated, Influenced, Persuaded, Authored, Presented, Advised, Consulted, Mediated, Clarified, Collaborated
 - **Impact/Results:** Pioneered, Transformed, Generated, Launched, Exceeded, Accelerated, Maximized, Secured, Revitalized, Reduced
 
-### Expansion Instructions
+### Refinement Instructions
 
 1. **Extract JD Context:** Identify the "Power Verbs" used in the Job Description. If the JD uses "Builds," the resume should use "Architected" or "Spearheaded."
 
-2. **The XYZ Formula:** Every expanded bullet point MUST follow this structure:
-   Accomplished [X] as measured by [Y], by doing [Z].
+2. **The XYZ Formula:** Prefer the structure "Accomplished [X] as measured by [Y], by doing [Z]" when natural and when real metrics exist. However, a short punchy bullet that clearly demonstrates a JD-required skill is always better than a padded XYZ bullet. Do not force every bullet into this format.
 
-3. **Keyword Injection:** Scan the JD for technical nouns (e.g., "Python," "AWS," "Agile"). Infiltrate these words into the descriptions of past projects even if they weren't the "main" focus, provided it remains truthful to existing skills.
+3. **Keyword Selection:** Place JD keywords by choosing the right bullets to keep, not by injecting terms into every sentence. If a bullet naturally contains a JD keyword, that is better than rewriting a different bullet to artificially include it.
 
 4. **Bullet Point Refinement:**
    - Remove ALL "Responsible for..." or "Tasked with..." phrases.
@@ -60,15 +73,15 @@ When rewriting bullet points, prioritize the following verbs. Match the verb cat
 
 2. **Mirroring:** If the JD lists "Collaboration with Stakeholders," do NOT change it to "Talking to clients." Use the JD's exact terminology to ensure the parser flags a direct match.
 
-3. **Quantifiable Fluff:** If a soft skill is required (e.g., "Leadership"), expand an existing bullet point to include the impact of that leadership (e.g., "...resulting in a 15% increase in team velocity").
+3. **Quantifiable Outcomes:** If a soft skill is required (e.g., "Leadership"), select a bullet that already demonstrates that skill with concrete outcomes. Do not fabricate metrics — use only numbers from the base resume.
 
 ### Final Quality Check
 
 Before returning the tailored resume, verify:
-1. The tailored version has a significantly higher keyword match than the original.
+1. The output is 400-500 words (1 page) with 2 bullets per role and maximum 3-4 roles.
 2. All "hallucination" constraints from the Personal Constraints section are strictly followed.
 3. Every bullet point leads with a high-impact verb from the Verb Bank.
-4. The XYZ formula (Accomplished X, measured by Y, by doing Z) is applied to every experience bullet.
+4. Irrelevant roles and sections have been removed, not just summarized.
 
 ## User Override Clause
 If post-generation feedback is provided during iterative refinement, the AI is permitted to deviate from standard templates and formatting rules to accommodate the user's personal voice, sign-off preferences, and custom phrasing. Factual grounding constraints (no fabricated skills, credentials, or metrics) still apply.
