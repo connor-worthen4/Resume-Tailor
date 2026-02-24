@@ -686,7 +686,25 @@ export const SYNONYM_MAP: Record<string, string[]> = {
 function wordBoundaryMatch(needle: string, haystack: string): boolean {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`(?:^|[\\s,;.!?()\\[\\]{}/"'\\-])${escaped}(?:$|[\\s,;.!?()\\[\\]{}/"'\\-])`, 'i');
-  return pattern.test(haystack);
+  const result = pattern.test(haystack);
+
+  // DIAG: Log boundary match attempts for debugging ATS scoring
+  if (!result) {
+    // Check if the needle exists as a plain substring (would catch boundary char issues)
+    const substringExists = haystack.toLowerCase().includes(needle.toLowerCase());
+    if (substringExists) {
+      // Find the surrounding characters to diagnose boundary failure
+      const idx = haystack.toLowerCase().indexOf(needle.toLowerCase());
+      const charBefore = idx > 0 ? haystack[idx - 1] : '^START';
+      const charAfter = idx + needle.length < haystack.length ? haystack[idx + needle.length] : '$END';
+      console.log(`[DIAG:wordBoundaryMatch] SUBSTRING EXISTS but boundary match FAILED for "${needle}"`);
+      console.log(`  charBefore="${charBefore}" (code=${typeof charBefore === 'string' ? charBefore.charCodeAt(0) : 'N/A'}), charAfter="${charAfter}" (code=${typeof charAfter === 'string' ? charAfter.charCodeAt(0) : 'N/A'})`);
+      console.log(`  Context: "...${haystack.substring(Math.max(0, idx - 15), idx)}[${haystack.substring(idx, idx + needle.length)}]${haystack.substring(idx + needle.length, idx + needle.length + 15)}..."`);
+      console.log(`  Pattern used: ${pattern.source}`);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -697,19 +715,49 @@ export function termExistsWithSynonyms(term: string, text: string): boolean {
   const lower = text.toLowerCase();
   const termLower = term.toLowerCase();
 
-  if (wordBoundaryMatch(termLower, lower)) return true;
+  // DIAG: Track all match attempts for this term
+  const diagAttempts: string[] = [];
+
+  if (wordBoundaryMatch(termLower, lower)) {
+    diagAttempts.push(`direct match "${termLower}" => FOUND`);
+    console.log(`[DIAG:termExists] "${term}" => FOUND (direct match)`);
+    return true;
+  }
+  diagAttempts.push(`direct match "${termLower}" => NOT FOUND`);
 
   // Check if term is a key in synonym map
   const synonyms = SYNONYM_MAP[termLower];
   if (synonyms) {
-    return synonyms.some(syn => wordBoundaryMatch(syn, lower));
+    for (const syn of synonyms) {
+      const synMatch = wordBoundaryMatch(syn, lower);
+      diagAttempts.push(`synonym "${syn}" => ${synMatch ? 'FOUND' : 'NOT FOUND'}`);
+      if (synMatch) {
+        console.log(`[DIAG:termExists] "${term}" => FOUND via synonym "${syn}"`);
+        return true;
+      }
+    }
   }
 
   // Check if term is a value in synonym map (reverse lookup)
   for (const [abbrev, expansions] of Object.entries(SYNONYM_MAP)) {
-    if (expansions.some(exp => exp === termLower) && wordBoundaryMatch(abbrev, lower)) {
-      return true;
+    if (expansions.some(exp => exp === termLower)) {
+      const abbrevMatch = wordBoundaryMatch(abbrev, lower);
+      diagAttempts.push(`reverse-synonym abbrev "${abbrev}" => ${abbrevMatch ? 'FOUND' : 'NOT FOUND'}`);
+      if (abbrevMatch) {
+        console.log(`[DIAG:termExists] "${term}" => FOUND via reverse-synonym abbrev "${abbrev}"`);
+        return true;
+      }
     }
+  }
+
+  // DIAG: Log all failed attempts
+  console.log(`[DIAG:termExists] "${term}" => NOT FOUND in text. All attempts:`);
+  for (const attempt of diagAttempts) {
+    console.log(`  - ${attempt}`);
+  }
+  // Check for plain substring presence as a sanity check
+  if (lower.includes(termLower)) {
+    console.log(`  WARNING: "${term}" EXISTS as substring but all boundary matches failed!`);
   }
 
   return false;

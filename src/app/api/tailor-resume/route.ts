@@ -115,9 +115,22 @@ export async function POST(request: NextRequest) {
             const headingValidation = validateSectionHeadings(result.tailoredResume);
             const gapDetection = detectEmploymentGaps(result.tailoredResume);
 
+            // DIAG: Log the data flow into ATS scoring
+            console.log(`\n${'#'.repeat(80)}`);
+            console.log(`[DIAG:API] ATS SCORING DATA FLOW TRACE`);
+            console.log(`[DIAG:API] data.resumeText (original) type: ${typeof data.resumeText}, length: ${data.resumeText.length}`);
+            console.log(`[DIAG:API] result.tailoredResume type: ${typeof result.tailoredResume}, length: ${result.tailoredResume.length}`);
+            console.log(`[DIAG:API] Are they the same object? ${data.resumeText === result.tailoredResume}`);
+            console.log(`[DIAG:API] Original resume first 300 chars:\n---\n${data.resumeText.substring(0, 300)}\n---`);
+            console.log(`[DIAG:API] Tailored resume first 300 chars:\n---\n${result.tailoredResume.substring(0, 300)}\n---`);
+            console.log(`[DIAG:API] processedJD.extractedSkills.hardSkills: [${processedJD.extractedSkills.hardSkills.join(', ')}]`);
+            console.log(`[DIAG:API] Now scoring TAILORED resume (pass 1)...`);
+            console.log(`${'#'.repeat(80)}\n`);
+
             // Step 15: ATS Scoring uses preprocessed JD + original resume for gap detection
             const atsScore = computeATSScore(result.tailoredResume, processedJD, data.resumeText);
 
+            console.log(`\n[DIAG:API] Now scoring ORIGINAL resume (pass 2 — for before/after comparison)...`);
             // Original resume score for comparison (also uses same processedJD)
             const originalATSScore = computeATSScore(data.resumeText, processedJD, data.resumeText);
 

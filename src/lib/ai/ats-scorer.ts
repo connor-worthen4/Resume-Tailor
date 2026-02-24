@@ -208,24 +208,40 @@ function scoreHardSkillMatch(
   // Separate JD skills into overlapping (candidate has) vs gap (candidate doesn't have)
   const overlappingSkills: string[] = [];
 
+  console.log(`\n[DIAG:scoreHardSkillMatch] --- Checking ${hardSkills.length} hard skills ---`);
+
   for (const skill of hardSkills) {
+    console.log(`\n[DIAG:scoreHardSkillMatch] Checking skill: "${skill}"`);
+
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 1: Check if "${skill}" exists in ORIGINAL resume...`);
     const inOriginal = originalResume ? termExistsWithSynonyms(skill, originalResume) : true;
 
     if (!inOriginal) {
       // Candidate doesn't have this skill — it's a gap, not a penalty
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: SKILLS GAP (not in original resume)`);
       skillsGap.push(skill);
       continue;
     }
 
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 1 result: FOUND in original resume`);
     overlappingSkills.push(skill);
 
+    console.log(`[DIAG:scoreHardSkillMatch]   Step 2: Check if "${skill}" exists in TAILORED resume...`);
     if (termExistsWithSynonyms(skill, tailoredResume)) {
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: MATCHED (in both original and tailored)`);
       matched.push(skill);
     } else {
       // Skill exists in original but missing from tailored — optimization failure
+      console.log(`[DIAG:scoreHardSkillMatch]   Result: MISSING (in original but NOT in tailored — optimization failure)`);
       missing.push(skill);
     }
   }
+
+  console.log(`\n[DIAG:scoreHardSkillMatch] --- Summary ---`);
+  console.log(`  Matched: [${matched.join(', ')}]`);
+  console.log(`  Missing (optimization failures): [${missing.join(', ')}]`);
+  console.log(`  Skills gap (not in original): [${skillsGap.join(', ')}]`);
+  console.log(`  Overlapping: [${overlappingSkills.join(', ')}]`);
 
   // Score based on overlapping skills only (not the full JD list)
   // If zero overlap, the candidate has none of the JD's skills — score is 0, not a free pass
@@ -721,6 +737,24 @@ export function computeATSScore(
   const { hardSkills, softSkills } = processedJD.extractedSkills;
   const jobTitle = processedJD.jobTitle;
   const sections = parseResumeSections(tailoredResume);
+
+  // DIAG: Log what text is being scored and what skills are being checked
+  const isTailoredScoring = tailoredResume !== originalResume;
+  console.log(`\n${'='.repeat(80)}`);
+  console.log(`[DIAG:computeATSScore] Scoring ${isTailoredScoring ? 'TAILORED' : 'ORIGINAL'} resume`);
+  console.log(`[DIAG:computeATSScore] Tailored resume length: ${tailoredResume.length} chars, ${tailoredResume.split(/\s+/).length} words`);
+  console.log(`[DIAG:computeATSScore] Tailored resume first 500 chars:\n---\n${tailoredResume.substring(0, 500)}\n---`);
+  if (originalResume) {
+    console.log(`[DIAG:computeATSScore] Original resume length: ${originalResume.length} chars, ${originalResume.split(/\s+/).length} words`);
+    console.log(`[DIAG:computeATSScore] Original resume first 500 chars:\n---\n${originalResume.substring(0, 500)}\n---`);
+  } else {
+    console.log(`[DIAG:computeATSScore] Original resume: NOT PROVIDED`);
+  }
+  console.log(`[DIAG:computeATSScore] JD Hard Skills (${hardSkills.length}): [${hardSkills.join(', ')}]`);
+  console.log(`[DIAG:computeATSScore] JD Soft Skills (${softSkills.length}): [${softSkills.join(', ')}]`);
+  console.log(`[DIAG:computeATSScore] Job Title: "${jobTitle}"`);
+  console.log(`[DIAG:computeATSScore] Parsed sections: ${sections.map(s => `${s.name}(zone${s.zone})`).join(', ')}`);
+  console.log(`${'='.repeat(80)}\n`);
 
   // TIER 0: Parsing Gate
   const parsingGate = checkParsingGate(tailoredResume);
