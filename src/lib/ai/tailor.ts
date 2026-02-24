@@ -116,9 +116,11 @@ export function decomposeJobTitle(title: string): DecomposedTitle {
 
 /**
  * Build a headline guidance block for the AI prompt from a decomposed title.
+ * The headline should use the EXACT job posting title to maximize ATS match.
  */
 function buildHeadlineGuidance(decomposed: DecomposedTitle): string {
   const lines: string[] = ['[Headline Guidance]'];
+  lines.push(`Exact Job Posting Title: ${decomposed.rawTitle}`);
   lines.push(`Core Role: ${decomposed.coreRole}`);
   if (decomposed.level) {
     lines.push(`Level: ${decomposed.level}`);
@@ -129,8 +131,7 @@ function buildHeadlineGuidance(decomposed: DecomposedTitle): string {
   if (decomposed.techStack.length > 0) {
     lines.push(`Tech Stack Keywords: ${decomposed.techStack.join(', ')}`);
   }
-  lines.push(`Raw JD Title (do NOT use verbatim): ${decomposed.rawTitle}`);
-  lines.push('Construct a natural professional headline using these components. All core role words and qualifier/tech keywords should appear in the headline or first summary line.');
+  lines.push('HEADLINE RULE: Use the Exact Job Posting Title above as the resume headline verbatim. Do NOT shorten, rephrase, or reword it. If the title contains a level indicator (II, Senior, Staff, etc.), include it. If it contains a domain parenthetical (e.g., "Credit Decisioning", "Payments"), include it exactly as written. The headline must be an exact or near-exact match of the job posting title.');
   return lines.join('\n');
 }
 
@@ -149,18 +150,18 @@ PRIORITY TWO: CONTENT SELECTION AND TRIMMING
 Your job is NOT to rewrite every bullet from the base resume. Your job is to SELECT the most relevant content for this specific JD and CUT everything else. A focused, shorter resume always outperforms a bloated one.
 
 ROLE TRIAGE — Before writing anything, classify each role in the base resume:
-- HIGH relevance (core skills overlap with JD requirements): Keep this role. Write 2 strong bullets.
-- MEDIUM relevance (transferable skills, adjacent domain): Keep this role. Write 1-2 bullets.
-- LOW relevance (no meaningful connection to JD): Remove entirely, or reduce to a single-line summary (Title, Company, Dates) with no bullets.
+- HIGH relevance (core skills overlap with JD requirements): Keep this role. Write 3-4 strong bullets with JD keywords.
+- MEDIUM relevance (transferable skills, adjacent domain): Keep this role. Write 2-3 bullets.
+- LOW relevance (no meaningful connection to JD): Remove entirely, or reduce to a single-line summary (Title, Company, Dates) with no bullets. Only remove if truly ZERO connection to JD.
 
-BULLET SELECTION — For each kept role, pick the 2 strongest bullets that demonstrate JD-required skills or relevant outcomes. Cut everything else. Do NOT rewrite all 6-8 bullets from the original — select the 2 best and sharpen them.
+BULLET SELECTION — For each kept role, pick the 3-4 strongest bullets that demonstrate JD-required skills or relevant outcomes. Every bullet must contain at least one exact JD keyword. Cut bullets that cannot be tied to a JD requirement.
 
 CONTENT BUDGET (for resumes, not CVs):
-- Total output: 400-500 words (1 page)
-- Experience section: Maximum 3-4 roles, 2 bullets each
+- Total output: 800-1000 words (2 pages). Two pages is the target for candidates with 4+ years of experience across multiple roles/engagements.
+- Experience section: Include ALL relevant roles/engagements, 3-4 bullets each. If the candidate has multiple client engagements under one employer (e.g., a consulting firm), include all engagements with sufficient detail. Only cut a role if it has ZERO relevance to the job description.
 - Professional Summary: 2-3 sentences directly addressing the JD's top requirements
-- Skills section: Only skills that overlap with the JD, organized into 2-3 subcategories
-- Other sections (Projects, Volunteer, Awards): Include ONLY if they add direct value for this JD. If the JD does not mention or value them, cut the entire section.
+- Skills section: Only skills that overlap with the JD, organized into 2-3 subcategories, using the JD's exact phrasing
+- Projects section: Include when projects demonstrate skills relevant to the JD (see Projects Section rules below). Omit only when no projects are relevant.
 
 TRIMMING PLAN — In the ---CHANGES--- section, explicitly list:
 - Which roles were kept, trimmed, or removed, and why
@@ -189,31 +190,28 @@ Core Principles:
 2. Every bullet point MUST start with a high-impact verb (Spearheaded, Architected, Optimized, Negotiated, Generated, etc.)
 3. Prefer the XYZ pattern when natural: Accomplished [X] as measured by [Y], by doing [Z] — but ONLY use real metrics from the original resume. If no metric exists, describe the Technical Result instead. A short, punchy bullet that clearly demonstrates a JD-required skill is ALWAYS better than a bloated XYZ-format bullet that pads word count. Do NOT force every bullet into XYZ format. The strategy mode (keyword, achievement, hybrid) determines emphasis. See strategy instructions below.
 4. NEVER use "Responsible for..." or "Tasked with..." — replace with action verbs
-5. Mirror the exact terminology from the Job Description for ATS matching — but ONLY for skills/tools already in the original resume
+5. Mirror the EXACT terminology from the Job Description for ATS matching — but ONLY for skills/tools already in the original resume. This means: if the JD says "REST", use "REST" not "RESTful APIs". If the JD says "Distributed Systems", list "Distributed Systems" explicitly — do not rely on synonyms like "microservices" or "event-driven" to imply it. If the JD says "MySQL" and the candidate has SQL/PostgreSQL/database experience, include "MySQL" alongside existing database skills. For every skill or technology mentioned in the JD, if the candidate has that experience or closely related experience in their base resume, include it using the JD's EXACT phrasing in the skills section.
 6. The top 5 technical skills from the JD that OVERLAP with the original resume should appear 2-3 times across different sections (headline, summary, skills, experience) with natural contextual variation. The first mention in each section provides the most scoring value (BM25 saturation). Never exceed 3 mentions of any single term. Target overall keyword density of 1.5-2.2% of total word count — exceeding ~3% density for any single term risks triggering stuffing detection in modern ATS.
-7. Keep each bullet point to a maximum of 2 lines for ATS readability
-8. Maintain reverse-chronological order and standard section headers
-9. JOB TITLE HEADLINE (CRITICAL — 10.6x IMPACT): The professional headline at the top of the resume must contain the CORE ROLE WORDS from the job title. This single optimization produces the highest documented increase in interview probability.
+7. KEYWORD INJECTION PER BULLET: Every bullet point in the experience section MUST contain at least one exact keyword or phrase from the job description. When the JD mentions a concept that the candidate has experience with under a different name, use the JD's exact terminology in the bullet. Examples:
+   - JD says "distributed systems" and candidate built microservices with AWS Lambda/SQS/EventBridge -> the bullet MUST explicitly include the phrase "distributed systems"
+   - JD says "monitoring" and candidate used CloudWatch -> the bullet should say "monitoring" not just "CloudWatch"
+   - JD says "data pipelines" and candidate built ETL workflows -> the bullet should include "data pipelines"
+   - JD says "scalable" and candidate built high-throughput systems -> use the word "scalable"
+   Every bullet must pull its weight for keyword density. A bullet that does not contain at least one JD keyword is wasting resume space.
+8. Keep each bullet point to a maximum of 2 lines for ATS readability
+9. Maintain reverse-chronological order and standard section headers
+9. JOB TITLE HEADLINE (CRITICAL — 10.6x IMPACT): The professional headline at the top of the resume MUST be an exact or near-exact match of the job posting title. This single optimization produces the highest documented increase in interview probability.
 
-   DO NOT blindly copy the raw JD title. Titles like "Software Engineer - Backend (Python)" or "Sr. Data Scientist, ML Platform" contain organizational qualifiers, team names, or parenthetical tech stacks that look unnatural on a resume and signal a lazy copy-paste to recruiters.
+   USE THE EXACT JOB POSTING TITLE AS THE HEADLINE. If the posting title is "Software Engineer II, Backend (Credit Decisioning)", your headline must be "Software Engineer II, Backend (Credit Decisioning)" — not a reworded, shortened, or reformatted version.
 
-   Instead, DECOMPOSE the JD title and construct a natural professional headline:
-   a) CORE ROLE (e.g., "Software Engineer", "Data Scientist", "Product Manager") — these words MUST appear in the headline.
-   b) QUALIFIERS (e.g., "Backend", "Frontend", "Full Stack", "Cloud", "Growth") — integrate naturally as descriptive context in the headline.
-   c) TECH STACK from parentheses or after separators (e.g., "Python", "React/Node") — include as keyword-rich context. Place in the headline if short, or in the summary if the headline would become cluttered.
+   Rules:
+   a) If the title contains a level indicator (II, Senior, Staff, Principal, Lead, etc.), INCLUDE IT in the headline.
+   b) If the title contains a domain parenthetical (e.g., "Credit Decisioning", "Payments", "ML Platform"), INCLUDE IT in the headline exactly as written.
+   c) If the title contains separators (dashes, commas, pipes), preserve the structure.
+   d) Do NOT strip qualifiers, team names, or specialization context from the title. These are ATS-indexed terms.
+   e) The ONLY acceptable modifications: expanding abbreviations (e.g., "Sr." to "Senior") or removing obviously internal identifiers (e.g., "Req #12345").
 
-   Good headline formats:
-   - "Backend Software Engineer" (qualifier merged into title naturally)
-   - "Software Engineer | Backend Development, Python, AWS" (structured with separator — packs keywords)
-   - "Full Stack Developer | React, Node.js, TypeScript" (tech stack as headline keywords)
-   - "Senior Data Scientist — Machine Learning & NLP" (qualifier as specialization)
-
-   Bad headline formats:
-   - "Software Engineer - Backend (Python)" (raw JD title copy-paste)
-   - "Sr. Data Scientist, ML Platform" (includes internal team name)
-   - "Product Manager III - Growth" (includes internal level numbering)
-
-   If the [Headline Guidance] block is provided in the message, use its decomposed components to construct the headline. Every core role word AND qualifier/tech keyword should appear somewhere in the headline or the first line of the summary. The headline is the highest-weighted ATS zone — maximize keyword density here while keeping it readable as a professional title a human would write.
+   If the [Headline Guidance] block is provided in the message, use the "Exact Job Posting Title" field as the headline. The headline is the highest-weighted ATS zone — an exact title match maximizes keyword alignment with the posting.
 10. KEYWORD PLACEMENT HIERARCHY: Not all keyword placements are equal. ATS parsers weight keywords by their location in the document. Place keywords in this priority order:
    (1) Resume headline/professional title — highest weight, biggest impact
    (2) Professional summary — second highest, sets the framing for the entire document
@@ -224,7 +222,7 @@ Core Principles:
 11. HARD SKILL PRIORITY: ATS filters weight hard/technical skills (languages, frameworks, tools, platforms, certifications) 4-8x more heavily than soft skills (leadership, communication, teamwork) for initial screening. Prioritize hard skill keyword matching at a 4:1 ratio over soft skills. Hard skills should dominate the Skills section and appear in experience bullets with technical context. Soft skills should be woven naturally into experience descriptions as supporting evidence, not listed as standalone keywords. When space is limited, always preserve a hard skill keyword over a soft skill keyword.
 12. DUAL-FORM KEYWORDS: For every technical acronym or abbreviation, include both the full term and the acronym at least once in the resume. First mention should use the full term with the acronym in parentheses — e.g., "Amazon Web Services (AWS)," "Continuous Integration/Continuous Deployment (CI/CD)," "Natural Language Processing (NLP)." Subsequent mentions can use the acronym alone. This ensures the resume matches regardless of whether the ATS or recruiter searches for the abbreviated or expanded form.
 13. CONTACT INFORMATION PLACEMENT: All contact information (full name, phone number, email address, LinkedIn URL, city/state) MUST be placed in the main document body — never in document headers, footers, or text boxes. ATS parsers frequently skip header/footer content, causing 25% of resumes to fail contact info extraction. The LinkedIn URL should appear as visible text (e.g., "linkedin.com/in/username"), not hidden behind a hyperlink. If the original resume has contact info in a header, move it to the body during tailoring.
-14. DATE FORMATTING: All dates must use a consistent format throughout the entire resume. Use "Month YYYY" (e.g., "January 2023 – Present") or "MM/YYYY" (e.g., "01/2023 – Present"). Always include months — year-only dates (e.g., "2022 – 2023") reduce ATS parsing accuracy and can trigger gap-detection flags. Never mix formats within the same document (e.g., don't use "Jan 2023" in one role and "January 2023" in another). Preserve the candidate's original start/end dates — never alter employment dates.
+14. DATE FORMATTING: All dates MUST use the format "Month YYYY" with the full month name spelled out (e.g., "January 2023 - Present", "October 2021 - March 2022"). NEVER use abbreviated months (e.g., "Jan", "Oct"). NEVER use MM/YYYY numeric format. NEVER mix formats. Every date range across the entire resume must follow this exact pattern: "FullMonthName YYYY - FullMonthName YYYY" or "FullMonthName YYYY - Present". Preserve the candidate's original start/end dates — never alter employment dates, only standardize the format.
 
 Verb Bank (use these to re-contextualize, NOT to fabricate):
 Within each category, verbs are ordered by impact strength. Prefer verbs signaling ownership and scale (listed first) over participation verbs (listed last). Reserve collaborative/supportive verbs for junior roles or team-based achievements where claiming individual ownership would be inaccurate.
@@ -245,8 +243,25 @@ TECHNICAL OUTCOME DIRECTIVE (Mandatory):
 
 ATS Optimization:
 - Inject JD technical nouns ONLY when they already exist in the original resume
+- SKILLS SECTION MIRRORING: The technical skills section must use the JD's exact terminology. Do NOT substitute synonyms. Examples:
+  - JD says "REST" -> list "REST" (not "RESTful APIs" or "RESTful")
+  - JD says "Distributed Systems" -> list "Distributed Systems" (not just "microservices")
+  - JD says "MySQL" and candidate has database experience -> include "MySQL" alongside existing DB skills
+  - JD says "Monitoring" and candidate used CloudWatch -> list "Monitoring" as a skill
+  - JD says "CI/CD" -> list "CI/CD" (not just "GitHub Actions" or "Jenkins")
+  For every hard skill in the JD that the candidate has equivalent experience with, add it to the skills section using the JD's exact phrasing.
 - Use the JD's exact phrasing for soft skills and competencies (e.g., "Collaboration with Stakeholders" not "Talking to clients")
 - If a soft skill like "Leadership" is required, describe its impact using facts from the resume — do NOT invent percentages
+
+PROJECTS SECTION — CONDITIONAL INCLUSION:
+The Notable Projects (or "Projects") section should be treated as supplementary keyword coverage. Apply these rules:
+- INCLUDE a project if it demonstrates skills or contains keywords that are relevant to the JD but NOT fully covered by the work experience section. Examples:
+  - JD mentions "distributed systems", "event-driven architecture", or "automation" and a project demonstrates those skills -> INCLUDE the project
+  - JD mentions "desktop applications" or "GUI development" and a project covers that -> INCLUDE the project
+  - A project fills a skill gap that work experience does not cover -> INCLUDE the project
+- OMIT the Projects section entirely if NO projects contain skills or keywords relevant to the JD
+- Each included project should have a brief description (1-2 lines) that explicitly names JD-relevant technologies and concepts
+- Projects are NOT a substitute for work experience — they supplement it by covering skill gaps
 
 Section Heading Enforcement:
 - Use ONLY these approved section headings: "Professional Summary" or "Summary," "Work Experience" or "Experience," "Education," "Skills" or "Technical Skills," "Projects," "Certifications," "Awards," "Publications"
@@ -263,19 +278,31 @@ The following formatting rules ensure the resume passes ATS parsing — the bina
 - SPECIAL CHARACTERS: Use standard bullets (• or -) only. Avoid stars, arrows, checkmarks, emojis, or decorative dividers. These render as gibberish or parsing errors in most ATS.
 - HYPERLINKS: Display all URLs as visible text. ATS cannot follow hyperlinks — if a link is hidden behind anchor text, the URL is lost.
 
+DATE FORMATTING ENFORCEMENT:
+Before finalizing, verify every date in the resume follows this exact format: "FullMonthName YYYY - FullMonthName YYYY" (e.g., "October 2021 - March 2022", "January 2023 - Present"). Do NOT use abbreviated months (Jan, Feb, Oct, etc.). Do NOT use numeric dates (01/2023). Do NOT mix formats. This applies to all dates in Experience, Education, Certifications, and Projects sections.
+
 Output Format:
 - Return the complete tailored resume text with all sections
-- After the resume, add a section starting with "---CHANGES---" that lists the key modifications you made
-- Each change should be on its own line, starting with "- "
-- Do NOT include an ATS score estimate. The ATS compatibility score will be computed independently by the scoring engine after generation. Your job is to optimize the resume content — the scoring system will evaluate the result separately.
-- Instead, include a final line: "- Keyword Coverage Summary: [list the top JD keywords successfully integrated and note any required JD skills that could NOT be included because they are absent from the candidate's original resume]"`;
+- After the resume, add a section starting with "---CHANGES---" that lists the key modifications you made (each on its own line starting with "- ")
+- Do NOT include an ATS score estimate. The ATS compatibility score will be computed independently by the scoring engine after generation.
+- After the ---CHANGES--- section, add a structured summary section starting with "---TAILORING_SUMMARY---" in the following format:
+
+---TAILORING_SUMMARY---
+HEADLINE: [The exact headline used] -> [How it maps to the job posting title]
+KEYWORDS_INTEGRATED: [Comma-separated list of JD keywords that were successfully integrated, with their locations — e.g., "Python (headline, skills, experience)", "distributed systems (summary, experience)"]
+KEYWORDS_NOT_INTEGRATED: [Comma-separated list of JD keywords that could NOT be integrated because they are absent from the candidate's base resume — e.g., "Java, Kubernetes, Terraform"]
+ROLES_INCLUDED: [List each role included with brief reason — e.g., "Software Engineer at Acme (HIGH relevance: Python, AWS overlap)"]
+ROLES_EXCLUDED: [List each role excluded with reason — e.g., "Cashier at Store (ZERO JD relevance)" or "None"]
+PROJECTS_INCLUDED: [Yes/No, with reason — e.g., "Yes: AI Dev Bot covers distributed systems gap" or "No: no projects relevant to JD"]
+SKILLS_ADDED_FROM_JD: [List skills added to the skills section using JD's exact phrasing — e.g., "REST, Distributed Systems, MySQL, Monitoring"]
+DATE_FORMAT: [Confirm date format used — e.g., "All dates use Month YYYY format"]`;
 
 function getStrategyInstructions(mode: string): string {
   switch (mode) {
     case 'keyword':
       return `\n\nSTRATEGY: STRICT KEYWORD MIRRORING
 - Your PRIMARY goal is to maximize ATS keyword coverage while maintaining natural language
-- TRIMMING FIRST: Achieve keyword coverage through SELECTION — pick the bullets that already contain or naturally support JD keywords. Do NOT stuff keywords into every sentence. Choosing the right 2 bullets per role is more effective than rewriting 6 bullets with forced keyword insertions.
+- SELECTION FIRST: Achieve keyword coverage through SELECTION — pick the 3-4 bullets per role that already contain or naturally support JD keywords. Every bullet must include at least one exact JD keyword.
 - XYZ FORMULA: Optional in this mode. Use it when a bullet naturally lends itself to measurable outcomes, but do NOT force every bullet into XYZ format. Keyword placement and natural phrasing take priority.
 - Target 80-85% coverage of the JD's technical requirements that OVERLAP with the candidate's actual skills. Do NOT force coverage above this by stuffing keywords — density above 2.5% per term triggers stuffing detection in modern ATS
 - Extract every technical term, tool, framework, methodology, and competency phrase from the JD
@@ -287,19 +314,19 @@ function getStrategyInstructions(mode: string): string {
     case 'achievement':
       return `\n\nSTRATEGY: ACHIEVEMENT QUANTIFIER
 - Your PRIMARY goal is to select and sharpen the candidate's most compelling achievements for this specific JD
-- TRIMMING FIRST: Do NOT transform every bullet. Pick the 2 strongest achievements per role that demonstrate JD-required skills or relevant impact. Cut the rest. Quality over quantity.
+- SELECTION FIRST: Pick the 3-4 strongest achievements per role that demonstrate JD-required skills or relevant impact. Every bullet must include at least one exact JD keyword.
 - XYZ FORMULA: Preferred when natural. Use the pattern "Accomplished [X] as measured by [Y], by doing [Z]" for bullets with real metrics, but a concise achievement bullet without forced XYZ structure is better than a padded one.
 - Use ONLY metrics that already exist in the original resume. If a metric is missing, describe the Technical Outcome instead (e.g., "reducing server latency" rather than inventing "by 25%")
 - Focus on business impact using factual descriptions: efficiency gains, cost reductions, technical improvements — without fabricated numbers
 - Use the strongest possible action verbs from the Verb Bank — prefer ownership verbs (Spearheaded, Architected, Pioneered) over participation verbs
-- Still ensure the resume headline contains the exact JD job title — this is non-negotiable regardless of strategy mode
+- Still ensure the resume headline uses the exact job posting title verbatim — this is non-negotiable regardless of strategy mode
 - Keyword coverage is secondary to achievement storytelling, but overlapping JD keywords should still appear naturally in achievement descriptions
 - Prioritize hard skill keywords when weaving JD terms into achievement bullets`;
     case 'hybrid':
     default:
       return `\n\nSTRATEGY: HYBRID (KEYWORD + ACHIEVEMENT)
 - Balance ATS keyword optimization with achievement-oriented rewriting
-- TRIMMING FIRST: Start by selecting the most relevant roles and bullets, then optimize those selections for keywords and achievements. Do NOT rewrite the entire resume — trim first, then polish what remains. Picking the right 2 bullets per role and sharpening them beats rewriting 6 mediocre bullets.
+- SELECTION FIRST: Start by selecting the most relevant roles and bullets, then optimize those selections for keywords and achievements. Pick 3-4 bullets per role and sharpen them. Every bullet must contain at least one exact JD keyword.
 - XYZ FORMULA: Use the pattern when it fits naturally. A concise, punchy bullet that demonstrates a JD skill is always better than a padded XYZ bullet.
 - Target 70-80% coverage of the JD's technical requirements that overlap with the candidate's actual skills. Coverage above 80% should only come from genuine skill overlap, never from forced insertion
 - Mirror JD terminology AND weave keywords into achievement-oriented bullets
@@ -322,14 +349,14 @@ function getDocumentTypeInstructions(type: string): string {
 - Include academic history, research, grants, and professional affiliations if present`;
     case 'resume':
     default:
-      return `\n\nDOCUMENT TYPE: RESUME — STRICT CONTENT LIMITS
-- TARGET: 1 page, 400-500 words. This is a hard constraint, not a suggestion.
-- EXPERIENCE: Maximum 3-4 roles. Cut older or irrelevant roles entirely — do not summarize them, remove them. If a role has zero overlap with the JD, it does not belong in this resume.
-- BULLETS: 2 per role, maximum. Each bullet must be 1-2 lines. Pick the 2 bullets that best demonstrate JD-required skills. Cut everything else.
+      return `\n\nDOCUMENT TYPE: RESUME — CONTENT GUIDELINES
+- TARGET: 2 pages, 800-1000 words. Two pages allows sufficient room for keyword density and role coverage for experienced candidates.
+- EXPERIENCE: Include all roles that have ANY relevance to the JD. If the candidate has multiple client engagements under one employer (e.g., consulting/contracting firm), include ALL engagements with sufficient detail to maximize keyword coverage. Only cut a role if it has absolutely ZERO relevance to the job description.
+- BULLETS: 3-4 per role. Each bullet must be 1-2 lines and contain at least one exact JD keyword or phrase. Pick bullets that best demonstrate JD-required skills.
 - SUMMARY: 2-3 sentences that directly address the JD's top 2-3 requirements. No generic filler.
-- SKILLS: Only list skills that overlap with the JD. Organize into 2-3 subcategories. Remove any skill the JD does not mention or value.
-- SECTIONS: Remove entire sections (Projects, Volunteer, Awards, etc.) if they add no direct value for this specific JD. Every section must earn its space.
-- REMEMBER: A focused 1-page resume that hits the right keywords always outperforms a bloated 2-page resume that covers everything. Cut aggressively.`;
+- SKILLS: List all skills that overlap with the JD using the JD's exact phrasing. Organize into 2-3 subcategories.
+- PROJECTS: Include the Notable Projects section when projects contain keywords or demonstrate skills relevant to the JD. Omit only when NO projects are relevant.
+- Do NOT sacrifice keyword density or role coverage for brevity. Two pages of targeted, keyword-rich content outperforms one page that cuts relevant experience.`;
   }
 }
 
@@ -1561,6 +1588,34 @@ ${request.feedback}`;
 // Initial Generation Types & Functions
 // ---------------------------------------------------------------------------
 
+/**
+ * Parse the ---TAILORING_SUMMARY--- block from the AI output into a structured object.
+ */
+function parseTailoringSummary(text: string): TailoringSummary | undefined {
+  const summaryMarker = '---TAILORING_SUMMARY---';
+  const summaryIndex = text.indexOf(summaryMarker);
+  if (summaryIndex === -1) return undefined;
+
+  const summaryText = text.substring(summaryIndex + summaryMarker.length).trim();
+
+  const extractField = (label: string): string => {
+    const pattern = new RegExp(`^${label}:\\s*(.+)`, 'mi');
+    const match = summaryText.match(pattern);
+    return match ? match[1].trim() : '';
+  };
+
+  return {
+    headline: extractField('HEADLINE'),
+    keywordsIntegrated: extractField('KEYWORDS_INTEGRATED'),
+    keywordsNotIntegrated: extractField('KEYWORDS_NOT_INTEGRATED'),
+    rolesIncluded: extractField('ROLES_INCLUDED'),
+    rolesExcluded: extractField('ROLES_EXCLUDED'),
+    projectsIncluded: extractField('PROJECTS_INCLUDED'),
+    skillsAddedFromJD: extractField('SKILLS_ADDED_FROM_JD'),
+    dateFormat: extractField('DATE_FORMAT'),
+  };
+}
+
 export interface TailorRequest {
   resumeText: string;
   jobTitle: string;
@@ -1573,11 +1628,23 @@ export interface TailorRequest {
   documentType?: string;
 }
 
+export interface TailoringSummary {
+  headline: string;
+  keywordsIntegrated: string;
+  keywordsNotIntegrated: string;
+  rolesIncluded: string;
+  rolesExcluded: string;
+  projectsIncluded: string;
+  skillsAddedFromJD: string;
+  dateFormat: string;
+}
+
 export interface TailorResponse {
   tailoredResume: string;
   changes: string[];
   flaggedKeywords?: string[];
   verifiedChanges?: FeedbackVerification[];
+  tailoringSummary?: TailoringSummary;
 }
 
 export async function tailorResume(request: TailorRequest): Promise<TailorResponse> {
@@ -1590,7 +1657,7 @@ export async function tailorResume(request: TailorRequest): Promise<TailorRespon
 
   const isResume = !documentType || documentType === 'resume';
   const contentDirective = isResume ? `\n\n**Content Directive:**
-This is a LARGE base resume. Do NOT rewrite it in full. Select only the most relevant content for this specific role. Cut aggressively. Target output: 1 page, 2 bullets per role, 400-500 words max. Remove entire roles and sections that do not serve this JD.` : '';
+Target output: 2 pages, 3-4 bullets per role, 800-1000 words. Include all relevant roles and client engagements. Every bullet must contain at least one exact JD keyword. Only cut a role if it has zero relevance to the JD. Include the Projects section when projects cover JD-relevant skills.` : '';
 
   let messageContent = `Please tailor this resume for the following job:
 
@@ -1633,8 +1700,9 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
 
   const fullText = content.text;
 
-  // Parse the response to separate resume and changes
+  // Parse the response to separate resume, changes, and tailoring summary
   const changesSeparator = '---CHANGES---';
+  const summaryMarker = '---TAILORING_SUMMARY---';
   const separatorIndex = fullText.indexOf(changesSeparator);
 
   let tailoredResume: string;
@@ -1642,15 +1710,22 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
 
   if (separatorIndex !== -1) {
     tailoredResume = fullText.substring(0, separatorIndex).trim();
-    const changesText = fullText.substring(separatorIndex + changesSeparator.length).trim();
+    // Extract changes between ---CHANGES--- and ---TAILORING_SUMMARY--- (or end)
+    const changesStart = separatorIndex + changesSeparator.length;
+    const summaryIdx = fullText.indexOf(summaryMarker, changesStart);
+    const changesEnd = summaryIdx !== -1 ? summaryIdx : fullText.length;
+    const changesText = fullText.substring(changesStart, changesEnd).trim();
     changes = changesText
       .split('\n')
       .map((line) => line.replace(/^-\s*/, '').trim())
       .filter((line) => line.length > 0);
   } else {
-    tailoredResume = fullText.trim();
+    tailoredResume = fullText.substring(0, fullText.indexOf(summaryMarker) !== -1 ? fullText.indexOf(summaryMarker) : fullText.length).trim();
     changes = ['Resume has been tailored to match the job requirements'];
   }
+
+  // Parse the tailoring summary
+  const tailoringSummary = parseTailoringSummary(fullText);
 
   // Post-generation validation
   const validation = validateTailoredContent(resumeText, tailoredResume);
@@ -1658,7 +1733,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
     changes.push(`WARNING: Potentially new keywords detected: ${validation.flaggedSkills.join(', ')}`);
   }
 
-  return { tailoredResume, changes, flaggedKeywords: validation.flaggedSkills };
+  return { tailoredResume, changes, flaggedKeywords: validation.flaggedSkills, tailoringSummary };
 }
 
 // Streaming version for better UX
@@ -1674,7 +1749,7 @@ export async function* tailorResumeStream(
 
   const isResumeDoc = !documentType || documentType === 'resume';
   const streamContentDirective = isResumeDoc ? `\n\n**Content Directive:**
-This is a LARGE base resume. Do NOT rewrite it in full. Select only the most relevant content for this specific role. Cut aggressively. Target output: 1 page, 2 bullets per role, 400-500 words max. Remove entire roles and sections that do not serve this JD.` : '';
+Target output: 2 pages, 3-4 bullets per role, 800-1000 words. Include all relevant roles and client engagements. Every bullet must contain at least one exact JD keyword. Only cut a role if it has zero relevance to the JD. Include the Projects section when projects cover JD-relevant skills.` : '';
 
   let messageContent = `Please tailor this resume for the following job:
 
@@ -1720,8 +1795,9 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
     }
   }
 
-  // Parse the response
+  // Parse the response — extract resume, changes, and tailoring summary
   const changesSeparator = '---CHANGES---';
+  const summaryMarker = '---TAILORING_SUMMARY---';
   const separatorIndex = fullText.indexOf(changesSeparator);
 
   let tailoredResume: string;
@@ -1729,15 +1805,22 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
 
   if (separatorIndex !== -1) {
     tailoredResume = fullText.substring(0, separatorIndex).trim();
-    const changesText = fullText.substring(separatorIndex + changesSeparator.length).trim();
+    // Extract changes between ---CHANGES--- and ---TAILORING_SUMMARY--- (or end)
+    const changesStart = separatorIndex + changesSeparator.length;
+    const summaryIdx = fullText.indexOf(summaryMarker, changesStart);
+    const changesEnd = summaryIdx !== -1 ? summaryIdx : fullText.length;
+    const changesText = fullText.substring(changesStart, changesEnd).trim();
     changes = changesText
       .split('\n')
       .map((line) => line.replace(/^-\s*/, '').trim())
       .filter((line) => line.length > 0);
   } else {
-    tailoredResume = fullText.trim();
+    tailoredResume = fullText.substring(0, fullText.indexOf(summaryMarker) !== -1 ? fullText.indexOf(summaryMarker) : fullText.length).trim();
     changes = ['Resume has been tailored to match the job requirements'];
   }
+
+  // Parse the tailoring summary
+  const tailoringSummary = parseTailoringSummary(fullText);
 
   // Post-generation validation
   const validation = validateTailoredContent(request.resumeText, tailoredResume);
@@ -1745,7 +1828,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join('\n')}`;
     changes.push(`WARNING: Potentially new keywords detected: ${validation.flaggedSkills.join(', ')}`);
   }
 
-  return { tailoredResume, changes, flaggedKeywords: validation.flaggedSkills };
+  return { tailoredResume, changes, flaggedKeywords: validation.flaggedSkills, tailoringSummary };
 }
 
 // ---------------------------------------------------------------------------

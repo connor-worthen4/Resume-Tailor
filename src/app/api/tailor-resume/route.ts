@@ -128,6 +128,7 @@ export async function POST(request: NextRequest) {
                   tailoredResume: result.tailoredResume,
                   changes: result.changes,
                   flaggedKeywords: result.flaggedKeywords || [],
+                  tailoringSummary: result.tailoringSummary || null,
                   atsScore,
                   originalATSScore,
                   processedJD,
